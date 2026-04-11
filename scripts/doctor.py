@@ -41,9 +41,11 @@ def main() -> None:
     ok &= check_path("AGENTS.md", PROJECT_ROOT / "AGENTS.md")
     ok &= check_path("SKILL.md", PROJECT_ROOT / "SKILL.md")
     ok &= check_path("SKILL_PERSONAL.md", PROJECT_ROOT / "SKILL_PERSONAL.md")
+    ok &= check_path("SKILL_CONTACTS.md", PROJECT_ROOT / "SKILL_CONTACTS.md")
     ok &= check_path("rules/atomization.md", PROJECT_ROOT / "rules" / "atomization.md")
     ok &= check_path("rules/taxonomy.md", PROJECT_ROOT / "rules" / "taxonomy.md")
     ok &= check_path("rules/personal_notes.md", PROJECT_ROOT / "rules" / "personal_notes.md")
+    ok &= check_path("rules/contacts.md", PROJECT_ROOT / "rules" / "contacts.md")
     ok &= check_path("tags.yaml", PROJECT_ROOT / "tags.yaml")
 
     config_path = PROJECT_ROOT / "config.toml"

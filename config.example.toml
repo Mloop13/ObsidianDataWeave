@@ -6,6 +6,7 @@ vault_path = "/path/to/your/obsidian/vault"
 notes_folder = "Research & Insights"       # atomic notes destination
 moc_folder = "Guides & Overviews"          # MOC files destination
 source_folder = "Sources"                   # source document references
+contacts_folder = "Networking"              # contact notes destination
 
 [rclone]
 remote = "gdrive:"                          # rclone remote name (check: rclone listremotes)

@@ -171,6 +171,8 @@ def get_vault_dest(note_type: str, config: dict) -> Path:
         folder = vault_cfg.get("moc_folder", "MOCs")
     elif note_type == "source":
         folder = vault_cfg.get("source_folder", "Sources")
+    elif note_type == "contact":
+        folder = vault_cfg.get("contacts_folder", "Networking")
     else:
         # "atomic" and any unknown type
         folder = vault_cfg.get("notes_folder", "Notes")

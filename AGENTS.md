@@ -14,13 +14,17 @@ Agents should treat this file as the canonical integration contract for both Cla
    `python3 scripts/process_note.py "Note Title"`
    Safe automation form:
    `python3 scripts/process_note.py "Note Title" --mode atomize --non-interactive --on-conflict skip`
-3. Generate markdown files from an existing atom plan JSON:
+3. Process a contacts/networking note into individual contact cards:
+   `python3 scripts/process_contacts.py "Contacts Note"`
+   Safe automation form:
+   `python3 scripts/process_contacts.py "Contacts Note" --non-interactive --on-conflict skip`
+4. Generate markdown files from an existing atom plan JSON:
    `python3 scripts/generate_notes.py /path/to/atom-plan.json`
-4. Copy staged markdown files into the vault:
+5. Copy staged markdown files into the vault:
    `python3 scripts/vault_writer.py --staging /path/to/staging --atom-plan /path/to/atom-plan.json`
-5. Find duplicate note candidates or run semantic dedup:
+6. Find duplicate note candidates or run semantic dedup:
    `python3 scripts/dedup_vault.py --dry-run`
-6. Run environment checks before operating on the vault:
+7. Run environment checks before operating on the vault:
    `python3 scripts/doctor.py`
 
 ## Workflow Mapping
@@ -29,6 +33,7 @@ Common user intent -> command:
 - "process/import this .docx" -> `python3 scripts/process.py "<file>.docx"`
 - "process/import this .docx without prompts" -> `python3 scripts/process.py "<file>.docx" --non-interactive --on-conflict skip`
 - "process/enrich/atomize this note" -> `python3 scripts/process_note.py "<note title or path>"`
+- "process contacts" / "обработай контакты" -> `python3 scripts/process_contacts.py "<note title or path>"`
 - "atomize this note without prompts" -> `python3 scripts/process_note.py "<note title or path>" --mode atomize --non-interactive --on-conflict skip`
 - "show duplicate candidates" -> `python3 scripts/dedup_vault.py --dry-run --skip-claude`
 - "run full dedup review" -> `python3 scripts/dedup_vault.py`
@@ -52,6 +57,8 @@ Common user intent -> command:
 - `rules/personal_notes.md`: personal note rules
 - `SKILL.md`: Claude-facing adapter over this contract
 - `SKILL_PERSONAL.md`: prompt header for personal note processing
+- `SKILL_CONTACTS.md`: prompt header for contact note processing
+- `rules/contacts.md`: contact note rules
 
 ## CLI Contracts
 - `scripts/process.py`
@@ -62,6 +69,10 @@ Common user intent -> command:
   - Input: note title, filename, or absolute path
   - Safe automation flags for atomize writes: `--non-interactive --on-conflict skip|overwrite`
   - Output: writes updated/generated notes into the vault
+- `scripts/process_contacts.py`
+  - Input: note title, filename, or absolute path (containing contacts)
+  - Safe automation flags: `--non-interactive --on-conflict skip|overwrite`
+  - Output: writes individual contact notes + MOC to vault
 - `scripts/generate_notes.py`
   - Input: atom plan JSON
   - Output: staging directory path to stdout

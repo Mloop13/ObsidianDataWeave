@@ -9,6 +9,9 @@ trigger_phrases:
   - обработай документ
   - импортируй документ
   - zettelkasten правила
+  - process contacts
+  - обработай контакты
+  - networking contacts
 ---
 
 # ObsidianDataWeave Claude Adapter
@@ -21,6 +24,8 @@ Use the repo-local `AGENTS.md` as the primary contract.
   `python3 scripts/process.py "Document.docx"`
 - Process a personal note:
   `python3 scripts/process_note.py "Note Title"`
+- Process a contacts/networking note:
+  `python3 scripts/process_contacts.py "Contacts Note"`
 - Run duplicate review:
   `python3 scripts/dedup_vault.py --dry-run`
 - Validate setup:
