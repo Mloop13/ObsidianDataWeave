@@ -53,3 +53,7 @@ gdrive-import/
 
 # Logs
 *.log
+.gstack/
+
+# Claude Code runtime state (contains personal filenames + paths)
+.claude/
