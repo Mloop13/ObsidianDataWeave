@@ -31,6 +31,17 @@ Agents should treat this file as the canonical integration contract for both Cla
    `python3 scripts/dedup_vault.py --dry-run`
 8. Run environment checks before operating on the vault:
    `python3 scripts/doctor.py`
+9. Run deep research directly into a NotebookLM notebook (bypasses the upstream
+   CLI retry duplication bug, see "Why research_notebook.py exists" below):
+   `python3 scripts/research_notebook.py run "<notebook_id>" "<query>"`
+   Safe automation form:
+   `python3 scripts/research_notebook.py run "<notebook_id>" "<query>" --non-interactive`
+   Dry-run preview of what would be imported:
+   `python3 scripts/research_notebook.py run "<notebook_id>" "<query>" --dry-run`
+10. Clean up duplicate/error sources in an existing NotebookLM notebook:
+    `python3 scripts/research_notebook.py dedupe "<notebook_id>" --dry-run`
+    Safe automation form:
+    `python3 scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive`
 
 ## Workflow Mapping
 Common user intent -> command:
@@ -50,6 +61,10 @@ Common user intent -> command:
 - "run dedup without prompts" -> `python3 scripts/dedup_vault.py --non-interactive --decision skip`
 - "render markdown from atom plan" -> `python3 scripts/generate_notes.py "<plan.json>"`
 - "check setup/prereqs" -> `python3 scripts/doctor.py`
+- "run deep research in notebook" / "запусти ресерч в ноутбук" / "deep research into notebook" -> `python3 scripts/research_notebook.py run "<notebook_id>" "<query>"`
+- "dry-run research import" -> `python3 scripts/research_notebook.py run "<notebook_id>" "<query>" --dry-run`
+- "dedupe notebook sources" / "почисти дубли источников в ноутбуке" -> `python3 scripts/research_notebook.py dedupe "<notebook_id>" --dry-run`
+- "clean up broken research import" -> `python3 scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive`
 
 ## Important Constraints
 - `scripts/vault_writer.py` is the only script allowed to write generated note files into `vault_path`.
@@ -94,6 +109,12 @@ Common user intent -> command:
   - Input: vault notes from configured vault path
   - Safe automation flags: `--non-interactive --decision merge|keep|skip`
   - Output: diagnostics to stderr, updates vault on confirmed merges
+- `scripts/research_notebook.py`
+  - Input: `run <notebook_id> "<query>"` or `dedupe <notebook_id>`
+  - `run` flags: `--mode fast|deep` (default deep), `--source web|drive`, `--max-sources N`, `--poll-interval N`, `--poll-timeout N`, `--profile NAME`, `--dry-run`, `--non-interactive`
+  - `dedupe` flags: `--key auto|url|title`, `--include-error`, `--dry-run`, `--non-interactive`, `--profile NAME`
+  - Behavior: drives `notebooklm-py` Python API directly, so IMPORT_RESEARCH is a one-shot call with no retry-on-timeout duplication. Dedupe subcommand groups existing sources by URL (or title) and deletes everything except the first occurrence per group, optionally also removing sources in error state.
+  - Output: progress + summary on stderr; dry-run plan or empty-plan JSON on stdout
 
 ## Recommended Agent Behavior
 - Start with `python3 scripts/doctor.py` if setup is uncertain.
@@ -137,6 +158,20 @@ Common user intent -> command:
   - Safe automation flags: `--non-interactive --on-conflict skip|overwrite`
   - Output: summary to stdout; runs the full fetch -> atomize -> generate -> write pipeline
   - Prereq: same as `fetch_notebook.py`, plus `claude`/`codex` CLI for the rewrite step
+
+## Why research_notebook.py exists
+
+The upstream `notebooklm-py` CLI command
+`notebooklm source add-research "<query>" --mode deep --import-all`
+wraps `client.research.import_sources()` in an exponential-backoff retry loop that kicks in on `RPCTimeoutError`. Each retry re-imports the full source list without deduping against what's already in the notebook, so a single IMPORT_RESEARCH RPC that times out N times leaves N× duplicates. We hit this concretely: 78 research sources, 4 retries, 392 imported sources instead of ~78. Tracked upstream as `teng-lin/notebooklm-py` issue #241 (open).
+
+Upstream explicitly documents the escape hatch in `src/notebooklm/cli/helpers.py::import_with_retry`:
+
+> This is intentionally CLI-only policy. Library consumers calling `client.research.import_sources()` directly still get one-shot behavior.
+
+`scripts/research_notebook.py` takes that escape hatch. It drives the research flow through the `notebooklm-py` Python API, so IMPORT_RESEARCH is a single call with no silent retry — duplication literally cannot happen through this code path. The `dedupe` subcommand is the cleanup for notebooks already poisoned by the CLI bug.
+
+**Agents must prefer `research_notebook.py run` over `notebooklm source add-research --import-all`** until the upstream bug is fixed.
 
 ## Validation Commands
 - `pytest -q`

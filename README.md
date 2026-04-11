@@ -129,6 +129,28 @@ cd /путь/к/ObsidianDataWeave
 
 `<notebook_id>` — последний сегмент URL вашего нотбука: `https://notebooklm.google.com/notebook/<notebook_id>`. Флаги `--include-sources` и `--include-mindmap` добавляют индексированные источники и mind map. Для нескольких аккаунтов используйте `--profile <имя>`.
 
+#### Безопасный запуск deep research
+
+Не пользуйтесь `notebooklm source add-research "<query>" --mode deep --import-all` напрямую: в upstream-CLI есть баг ([teng-lin/notebooklm-py#241](https://github.com/teng-lin/notebooklm-py/issues/241)) — при таймауте IMPORT_RESEARCH CLI повторяет импорт полного списка источников без дедупликации, и нотбук получает N× дубликатов. У нас ловилось в боевом режиме: 78 источников → 392 после четырёх ретраев.
+
+Вместо CLI используйте `scripts/research_notebook.py`, который ходит в `notebooklm-py` как библиотека (upstream гарантирует one-shot поведение для библиотечных вызовов):
+
+```bash
+.venv/bin/python scripts/research_notebook.py run "<notebook_id>" "<query>"
+.venv/bin/python scripts/research_notebook.py run "<notebook_id>" "<query>" --dry-run
+```
+
+Опции: `--mode fast|deep` (по умолчанию deep), `--source web|drive`, `--max-sources N`, `--poll-interval` / `--poll-timeout`, `--profile <имя>`, `--dry-run`.
+
+Если нотбук уже был отравлен сломанным CLI, почистите его:
+
+```bash
+.venv/bin/python scripts/research_notebook.py dedupe "<notebook_id>" --dry-run
+.venv/bin/python scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive
+```
+
+`dedupe` группирует источники по URL (с fallback на title), оставляет первую копию каждой группы и по желанию удаляет источники в error-state. Всегда сначала `--dry-run`.
+
 ### Что происходит под капотом
 
 ```
@@ -346,6 +368,28 @@ Verify: the file `~/.notebooklm/storage_state.json` should now exist.
 ```
 
 `<notebook_id>` is the last URL segment of your notebook: `https://notebooklm.google.com/notebook/<notebook_id>`. Flags `--include-sources` and `--include-mindmap` add indexed source fulltext and mind maps. For multi-account setups use `--profile <name>`.
+
+#### Running deep research safely
+
+Do not use `notebooklm source add-research "<query>" --mode deep --import-all` directly — there is a known upstream bug ([teng-lin/notebooklm-py#241](https://github.com/teng-lin/notebooklm-py/issues/241)): on an IMPORT_RESEARCH timeout the CLI retries with the full source list without deduping, leaving N× duplicates. We hit it in anger: 78 research sources → 392 after four retries.
+
+Use `scripts/research_notebook.py` instead. It drives `notebooklm-py` as a Python library, which upstream explicitly documents as one-shot:
+
+```bash
+.venv/bin/python scripts/research_notebook.py run "<notebook_id>" "<query>"
+.venv/bin/python scripts/research_notebook.py run "<notebook_id>" "<query>" --dry-run
+```
+
+Options: `--mode fast|deep` (default `deep`), `--source web|drive`, `--max-sources N`, `--poll-interval` / `--poll-timeout`, `--profile <name>`, `--dry-run`.
+
+If a notebook was already poisoned by the broken CLI, clean it up:
+
+```bash
+.venv/bin/python scripts/research_notebook.py dedupe "<notebook_id>" --dry-run
+.venv/bin/python scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive
+```
+
+`dedupe` groups sources by URL (with title as fallback), keeps the first occurrence per group, and can also delete sources stuck in error state. Always start with `--dry-run`.
 
 ### How it works
 
