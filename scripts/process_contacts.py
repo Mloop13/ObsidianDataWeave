@@ -67,6 +67,50 @@ def load_rules() -> tuple[str, str]:
 # ── Note finding ─────────────────────────────────────────────────────────────
 
 
+DEFAULT_MOC_TITLE = "Networking — MOC"
+WIKILINK_RE = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]")
+
+
+def extract_wikilinks(body: str) -> set[str]:
+    """Return the set of `[[Target]]` link targets referenced in `body`.
+
+    `[[Target|Alias]]` is normalized to just `Target` so rename-via-alias
+    does not look like link loss. Anchors are preserved (`Page#heading`
+    remains distinct from `Page`) because losing a section anchor IS a
+    silent regression.
+    """
+    return {m.strip() for m in WIKILINK_RE.findall(body or "") if m.strip()}
+
+
+def find_existing_moc(
+    vault_path: Path, config: dict, moc_title: str = DEFAULT_MOC_TITLE
+) -> Path | None:
+    """Return the path to the Networking MOC file, if it already exists.
+
+    Looks first in the configured `moc_folder`, then the `contacts_folder`,
+    then the vault root, then a recursive scan by stem — the same order as
+    `find_note()` to keep behavior consistent with how users already
+    organize their vault.
+    """
+    filename = f"{moc_title}.md"
+    moc_folder = vault_path / config["vault"].get("moc_folder", "MOCs")
+    contacts_folder = vault_path / config["vault"].get("contacts_folder", "Networking")
+
+    for folder in [moc_folder, contacts_folder, vault_path]:
+        candidate = folder / filename
+        if candidate.exists() and _contained(candidate, vault_path):
+            return candidate
+
+    for md_file in vault_path.rglob("*.md"):
+        rel_parts = md_file.relative_to(vault_path).parts
+        if any(part.startswith(".") for part in rel_parts):
+            continue
+        if md_file.stem == moc_title and _contained(md_file, vault_path):
+            return md_file
+
+    return None
+
+
 def _contained(candidate: Path, vault_root: Path) -> bool:
     """Return True iff `candidate` resolves to a path inside `vault_root`."""
     try:
@@ -191,6 +235,7 @@ def validate_contacts_result(
     vault_titles: set[str],
     *,
     strict_collisions: bool = True,
+    existing_moc_links: set[str] | None = None,
 ) -> list[str]:
     """Validate the contacts JSON output.
 
@@ -270,8 +315,26 @@ def validate_contacts_result(
     if moc:
         if moc.get("note_type") != "moc":
             errors.append(f"MOC note_type must be 'moc', got '{moc.get('note_type')}'")
-        if not moc.get("body"):
+        moc_body = moc.get("body") or ""
+        if not moc_body:
             errors.append("MOC body is empty")
+
+        # If we loaded an existing MOC, the LLM is required to preserve every
+        # wikilink that was already there — adding contacts must be additive.
+        # rules/contacts.md line 133 is explicit: "Do not remove existing
+        # entries." Trust nothing; verify with a regex pass.
+        if existing_moc_links:
+            new_links = extract_wikilinks(moc_body)
+            lost = existing_moc_links - new_links
+            if lost:
+                sample = sorted(lost)[:10]
+                extra = f" (+{len(lost) - len(sample)} more)" if len(lost) > len(sample) else ""
+                errors.append(
+                    "MOC regenerated without preserving existing wikilinks. "
+                    f"Lost entries: {sample}{extra}. "
+                    "The model must include every old [[wikilink]] in the "
+                    "updated MOC body (see rules/contacts.md §MOC Generation)."
+                )
 
     return errors
 
@@ -464,12 +527,30 @@ def main() -> None:
     skill_md = load_skill_contacts_md()
     contacts_rules, taxonomy_rules = load_rules()
 
+    # Load existing Networking MOC (if any) so the model can EXTEND it
+    # instead of regenerating from scratch. We also remember every wikilink
+    # the old MOC contained so `validate_contacts_result()` can hard-fail on
+    # silent entry loss.
+    existing_moc_path = find_existing_moc(vault_path, config)
+    existing_moc_body: str | None = None
+    existing_moc_links: set[str] = set()
+    if existing_moc_path is not None:
+        raw = existing_moc_path.read_text(encoding="utf-8")
+        _, existing_moc_body = split_frontmatter_and_body(raw)
+        existing_moc_links = extract_wikilinks(existing_moc_body or "")
+        print(
+            f"  Existing MOC: {existing_moc_path.name} "
+            f"({len(existing_moc_links)} wikilinks)",
+            file=sys.stderr,
+        )
+
     note_input = {
         "source_file": note_path.name,
         "body": body,
         "existing_frontmatter": frontmatter,
         "vault_titles": vault_titles,
         "word_count": word_count,
+        "existing_moc_body": existing_moc_body,
     }
 
     prompt = assemble_prompt(
@@ -511,7 +592,10 @@ def main() -> None:
     # clobber the existing note on disk — so require it to be explicit.
     strict = args.on_conflict != "overwrite"
     errors = validate_contacts_result(
-        result, vault_titles_set, strict_collisions=strict
+        result,
+        vault_titles_set,
+        strict_collisions=strict,
+        existing_moc_links=existing_moc_links,
     )
 
     if errors:
