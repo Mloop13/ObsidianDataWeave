@@ -33,17 +33,40 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
-AUTH_PATHS = [
-    Path.home() / ".notebooklm" / "storage_state.json",
-    Path.home() / ".config" / "notebooklm" / "storage_state.json",
-    Path.home() / ".notebooklm" / "default" / "storage_state.json",
-]
+def _auth_paths() -> list[Path]:
+    """Candidate NotebookLM session files, upstream-aware.
+
+    Prefers the path computed by `notebooklm.paths.get_storage_path()` (which
+    respects the `NOTEBOOKLM_HOME` env var), then falls back to the legacy
+    hard-coded defaults under `~/.notebooklm` and `~/.config/notebooklm`.
+    """
+    paths: list[Path] = []
+    try:
+        from notebooklm.paths import get_storage_path  # type: ignore[import-not-found]
+        paths.append(Path(get_storage_path()))
+    except Exception:
+        pass
+
+    home = Path.home()
+    legacy = [
+        home / ".notebooklm" / "storage_state.json",
+        home / ".config" / "notebooklm" / "storage_state.json",
+        home / ".notebooklm" / "default" / "storage_state.json",
+    ]
+    for p in legacy:
+        if p not in paths:
+            paths.append(p)
+    return paths
+
+
+AUTH_PATHS = _auth_paths()
 
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -105,9 +128,18 @@ def find_notebooklm_cli() -> list[str] | None:
     return None
 
 
+_INLINE_AUTH_MARKER = Path("<NOTEBOOKLM_AUTH_JSON env var>")
+
+
 def auth_file_exists() -> Path | None:
-    """Return the first existing auth file, or None."""
-    for path in AUTH_PATHS:
+    """Return the first existing auth file, or a sentinel Path if the inline
+    `NOTEBOOKLM_AUTH_JSON` env var is set, or None if neither is present.
+    """
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        return _INLINE_AUTH_MARKER
+    # Recompute on every call so a test or agent flipping NOTEBOOKLM_HOME at
+    # runtime sees the new location immediately.
+    for path in _auth_paths():
         if path.exists():
             return path
     return None

@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -62,23 +63,48 @@ AUTH_EXIT_CODE = 2
 
 
 def _notebooklm_auth_paths() -> list[Path]:
+    """Candidate session-file locations, upstream-aware.
+
+    Honors `NOTEBOOKLM_HOME` via `notebooklm.paths.get_storage_path()` when the
+    upstream package is importable, and falls back to the legacy hard-coded
+    locations under `~/.notebooklm` / `~/.config/notebooklm` otherwise.
+    """
+    paths: list[Path] = []
+    try:
+        from notebooklm.paths import get_storage_path  # type: ignore[import-not-found]
+        paths.append(Path(get_storage_path()))
+    except Exception:
+        pass
+
     home = Path.home()
-    return [
+    legacy = [
         home / ".notebooklm" / "storage_state.json",
         home / ".config" / "notebooklm" / "storage_state.json",
         home / ".notebooklm" / "default" / "storage_state.json",
     ]
+    for p in legacy:
+        if p not in paths:
+            paths.append(p)
+    return paths
 
 
 def check_auth_or_exit() -> None:
-    """Exit with a distinctive marker if `notebooklm login` has not been run."""
+    """Exit with a distinctive marker if `notebooklm login` has not been run.
+
+    Also honors the `NOTEBOOKLM_AUTH_JSON` env var (inline session JSON), which
+    upstream `notebooklm-py` accepts as a substitute for a session file.
+    """
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        return
     if any(path.exists() for path in _notebooklm_auth_paths()):
         return
     print(
         f"{AUTH_ERROR_MARKER}: No NotebookLM session found.\n"
         "Run this one-shot installer+login script first:\n"
         "  python3 scripts/notebooklm_setup.py --skip-login\n"
-        "  .venv/bin/notebooklm login   # in a real terminal\n",
+        "  .venv/bin/notebooklm login   # in a real terminal\n"
+        "Alternatively, set NOTEBOOKLM_HOME to your session directory, "
+        "or pass NOTEBOOKLM_AUTH_JSON with an inline session JSON.",
         file=sys.stderr,
     )
     raise SystemExit(AUTH_EXIT_CODE)

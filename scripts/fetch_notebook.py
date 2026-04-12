@@ -49,6 +49,7 @@ Prerequisites:
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -83,22 +84,51 @@ AUTH_EXIT_CODE = 2
 
 
 def _notebooklm_auth_paths() -> list[Path]:
-    """Return the candidate locations where notebooklm-py stores session cookies."""
+    """Return candidate locations where notebooklm-py stores session cookies.
+
+    Honors two forms of upstream configuration:
+      1. `NOTEBOOKLM_HOME` env var (via `notebooklm.paths.get_storage_path()`)
+      2. legacy hard-coded defaults under `~/.notebooklm` and `~/.config/notebooklm`
+
+    The `NOTEBOOKLM_AUTH_JSON` env var (inline session JSON) is checked
+    separately by `check_auth_or_exit()`, because it is not a path.
+    """
+    paths: list[Path] = []
+    try:
+        from notebooklm.paths import get_storage_path  # type: ignore[import-not-found]
+        paths.append(Path(get_storage_path()))
+    except Exception:
+        # Upstream package missing or older — fall through to legacy fallbacks.
+        pass
+
     home = Path.home()
-    return [
+    legacy = [
         home / ".notebooklm" / "storage_state.json",
         home / ".config" / "notebooklm" / "storage_state.json",
         home / ".notebooklm" / "default" / "storage_state.json",
     ]
+    for p in legacy:
+        if p not in paths:
+            paths.append(p)
+    return paths
 
 
 def check_auth_or_exit() -> None:
     """Exit with a distinctive marker if the user has not run `notebooklm login`.
 
+    Accepts three forms of authentication, in order of preference:
+      1. `NOTEBOOKLM_AUTH_JSON` env var with inline session JSON (upstream
+         escape hatch for non-interactive / containerized setups).
+      2. The upstream-computed storage path from `notebooklm.paths`.
+      3. Legacy locations under `~/.notebooklm` / `~/.config/notebooklm`.
+
     Claude Code / Codex / any agent consuming this pipeline can detect
     `NOTEBOOKLM_AUTH_REQUIRED` on stderr (plus exit code 2) and prompt the
     user to authenticate, or run `notebooklm login` directly.
     """
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        return
+
     if any(path.exists() for path in _notebooklm_auth_paths()):
         return
 
@@ -109,7 +139,9 @@ def check_auth_or_exit() -> None:
         "  python3 scripts/notebooklm_setup.py\n"
         "It installs notebooklm-py[browser], Playwright Chromium, and opens\n"
         "a browser window so you can sign in with your Google account.\n"
-        "After it finishes, rerun this command.",
+        "After it finishes, rerun this command.\n"
+        "Alternatively, set NOTEBOOKLM_HOME to your session directory, "
+        "or pass NOTEBOOKLM_AUTH_JSON with an inline session JSON.",
         file=sys.stderr,
     )
     raise SystemExit(AUTH_EXIT_CODE)
