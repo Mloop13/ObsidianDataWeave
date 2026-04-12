@@ -202,6 +202,27 @@ async def _run_research(args: argparse.Namespace) -> int:
         status_dict: dict = {}
         while True:
             status_dict = await client.research.poll(args.notebook_id) or {}
+            # Guard: make sure we are tracking the task we started, not a
+            # stale/concurrent one. The poll endpoint may return state for a
+            # different task_id (e.g. if the notebook had a prior research run
+            # still completing). If the ids mismatch we keep polling — the
+            # correct task should appear once the stale one finishes/expires.
+            polled_task_id = status_dict.get("task_id")
+            if polled_task_id and polled_task_id != task_id:
+                _log(
+                    f"Poll returned task_id={polled_task_id!r} (expected "
+                    f"{task_id!r}); ignoring stale task, continuing poll."
+                )
+                if time.monotonic() >= deadline:
+                    _err(
+                        f"Polling timed out after {args.poll_timeout}s while "
+                        f"waiting for our task_id={task_id!r} (poll keeps "
+                        f"returning stale task_id={polled_task_id!r})."
+                    )
+                    return 1
+                await asyncio.sleep(args.poll_interval)
+                continue
+
             status = status_dict.get("status", "unknown")
             if status == "completed":
                 break
