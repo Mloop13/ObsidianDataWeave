@@ -22,6 +22,11 @@ This script takes that escape hatch: it drives the research flow through the
 so duplication literally cannot happen. It also exposes a `dedupe` subcommand
 for cleaning up notebooks that have already been poisoned by the CLI bug.
 
+Note on task_id mismatch: NotebookLM sometimes assigns a different task_id in
+`research.poll()` than the one returned by `research.start()` for the same
+operation. The poll loop handles this by comparing the query text — if it
+matches our request, we adopt the polled task_id and proceed normally.
+
 Usage
 -----
     # Start deep web research and import every found source safely:
@@ -200,28 +205,43 @@ async def _run_research(args: argparse.Namespace) -> int:
         # ── Poll loop ──────────────────────────────────────────────────────────
         deadline = time.monotonic() + args.poll_timeout
         status_dict: dict = {}
+        adopted_task_id = False
         while True:
             status_dict = await client.research.poll(args.notebook_id) or {}
             # Guard: make sure we are tracking the task we started, not a
             # stale/concurrent one. The poll endpoint may return state for a
             # different task_id (e.g. if the notebook had a prior research run
-            # still completing). If the ids mismatch we keep polling — the
-            # correct task should appear once the stale one finishes/expires.
+            # still completing). If the ids mismatch we check whether the
+            # polled task carries our query — NotebookLM sometimes assigns a
+            # different task_id to the same research operation started by
+            # research.start(). When the query matches we adopt the polled id.
             polled_task_id = status_dict.get("task_id")
             if polled_task_id and polled_task_id != task_id:
-                _log(
-                    f"Poll returned task_id={polled_task_id!r} (expected "
-                    f"{task_id!r}); ignoring stale task, continuing poll."
-                )
-                if time.monotonic() >= deadline:
-                    _err(
-                        f"Polling timed out after {args.poll_timeout}s while "
-                        f"waiting for our task_id={task_id!r} (poll keeps "
-                        f"returning stale task_id={polled_task_id!r})."
+                polled_query = status_dict.get("query", "")
+                if polled_query and polled_query == args.query:
+                    if not adopted_task_id:
+                        _log(
+                            f"Poll returned task_id={polled_task_id!r} "
+                            f"(differs from start() id {task_id!r}), but "
+                            f"query matches — adopting polled id."
+                        )
+                        task_id = polled_task_id
+                        adopted_task_id = True
+                    # fall through to normal status handling below
+                else:
+                    _log(
+                        f"Poll returned task_id={polled_task_id!r} (expected "
+                        f"{task_id!r}); query mismatch — ignoring stale task."
                     )
-                    return 1
-                await asyncio.sleep(args.poll_interval)
-                continue
+                    if time.monotonic() >= deadline:
+                        _err(
+                            f"Polling timed out after {args.poll_timeout}s while "
+                            f"waiting for our task_id={task_id!r} (poll keeps "
+                            f"returning stale task_id={polled_task_id!r})."
+                        )
+                        return 1
+                    await asyncio.sleep(args.poll_interval)
+                    continue
 
             status = status_dict.get("status", "unknown")
             if status == "completed":
