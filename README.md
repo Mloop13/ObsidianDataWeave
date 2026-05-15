@@ -210,6 +210,41 @@ Vault note → detect mode → rewrite (Claude) → write back
 
 **Smart Connections** находит семантически близкие заметки через локальные эмбеддинги — второй слой связей поверх ручных.
 
+### LLM Wiki
+
+Третий слой знаний поверх атомарных заметок — **скомпилированная вики** в стиле Карпати. Не RAG (не пересчитывается при каждом запросе) и не плоский набор заметок (страницы связаны вики-ссылками и имеют типы). Это долгоживущая база, которая **накапливается** через явный merge при новых ингестах: существующие `[[вики-ссылки]]` обязаны сохраняться, иначе compile падает с `WIKI_LINKS_LOST` (exit 5).
+
+Вики живёт в изолированной папке внутри vault — `<vault>/<wiki_folder>/<slug>/` (по умолчанию `LLM Wiki/`). Атомарные заметки никогда не попадают сюда, и `wiki_compile.py` не читает заметки за пределами своей wiki-space.
+
+**Два режима:**
+
+- **project** — фиксированные core-страницы: overview, architecture, components, workflows, goals-and-roadmap, glossary, open-questions. Подходит для документации одной системы.
+- **corpus** — только entities/concepts растут по мере ингеста. Подходит для базы знаний по чтению/исследованиям.
+
+**Workflow:**
+
+```bash
+# 1. Создать пустую wiki-space (+ опц. --lang ru|en для русских/английских шаблонов)
+python3 scripts/wiki_init.py demo --mode project --title "Demo Project"
+
+# 2. Залить сырьё (статьи, доки, транскрипты)
+python3 scripts/wiki_ingest.py demo path/to/article.md --kind articles
+python3 scripts/wiki_ingest.py demo path/to/notes/ --kind docs
+
+# 3. Скомпилировать (LLM мерджит сырьё в страницы)
+python3 scripts/wiki_compile.py demo --since-last-compile
+
+# 4. Проверить целостность
+python3 scripts/wiki_lint.py demo --strict
+
+# Инкрементальный апдейт одной страницы из одного нового raw-инпута
+python3 scripts/wiki_update.py demo raw/docs/новый-файл.md
+```
+
+Все скрипты пишут через единственный writer `vault_writer.py` — атомарные пайплайны и wiki делят одну точку записи.
+
+**Язык шаблонов.** `wiki_init.py` поддерживает `--lang en` и `--lang ru`. Значение по умолчанию берётся из `[wiki].default_lang` в `config.toml` (если не указан — `en`). Влияет только на текст SCHEMA.md, index.md, log.md, raw/_README.md и core-страниц-stub'ов; структура и контракт frontmatter одинаковы для обоих языков. Wiki-space'ы на разных языках сосуществуют в одном vault без конфликтов.
+
 ### Шаблоны
 
 Директория `templates/` содержит стартовую структуру vault:
@@ -271,13 +306,22 @@ ObsidianDataWeave/
 │   ├── scan_vault.py         # Сканирование существующих заметок
 │   ├── rewrite_backend.py    # Бэкенд семантической перезаписи (Claude CLI)
 │   ├── config.py             # Загрузчик конфигурации
-│   └── doctor.py             # Проверка окружения
+│   ├── doctor.py             # Проверка окружения
+│   ├── wiki_init.py          # LLM Wiki — создать пустую wiki-space
+│   ├── wiki_ingest.py        # LLM Wiki — приём сырья (articles/docs/transcripts/assets)
+│   ├── wiki_compile.py       # LLM Wiki — главный пайплайн компиляции
+│   ├── wiki_update.py        # LLM Wiki — инкрементальный апдейт одной страницы
+│   ├── wiki_lint.py          # LLM Wiki — read-only проверка целостности
+│   └── wiki_models.py        # LLM Wiki — ChangeSet / WikiPage / валидация
 ├── rules/
 │   ├── atomization.md        # Правила атомизации
 │   ├── taxonomy.md           # Правила таксономии тегов
 │   ├── personal_notes.md     # Правила обработки личных заметок
-│   └── contacts.md           # Правила обработки контактов
-├── templates/                # Стартовая структура vault
+│   ├── contacts.md           # Правила обработки контактов
+│   ├── wiki_schema.md        # LLM Wiki — on-disk контракт
+│   ├── wiki_compile.md       # LLM Wiki — контракт LLM для compile
+│   └── wiki_update.md        # LLM Wiki — семантика инкрементального merge
+├── templates/                # Стартовая структура vault (+ templates/wiki/ для LLM Wiki)
 ├── tests/                    # Регрессионные тесты
 ├── docs/                     # Документация для агентов
 ├── AGENTS.md                 # Контракт агента (Claude Code + Codex)
@@ -486,6 +530,41 @@ Vault note → detect mode → rewrite (Claude) → write back
 
 **Smart Connections** finds semantically similar notes via local embeddings — a second layer of connections on top of manual links.
 
+### LLM Wiki
+
+A third knowledge layer on top of atomic notes — a **compiled wiki** in the Karpathy style. Not RAG (not recomputed on every query) and not a flat note pile (pages are interlinked and typed). It is a long-lived knowledge base that **accumulates** through explicit merge on each ingest: existing `[[wikilinks]]` must be preserved, otherwise compile fails with `WIKI_LINKS_LOST` (exit 5).
+
+The wiki lives in an isolated folder inside the vault — `<vault>/<wiki_folder>/<slug>/` (default `LLM Wiki/`). Atomic notes never appear here, and `wiki_compile.py` never reads notes outside its own wiki-space.
+
+**Two modes:**
+
+- **project** — fixed core pages: overview, architecture, components, workflows, goals-and-roadmap, glossary, open-questions. Use for documenting a single coherent system.
+- **corpus** — only entities/concepts grow as raw is ingested. Use for a reading-list / research knowledge base.
+
+**Workflow:**
+
+```bash
+# 1. Create an empty wiki-space (+ optional --lang ru|en for template language)
+python3 scripts/wiki_init.py demo --mode project --title "Demo Project"
+
+# 2. Ingest raw inputs (articles, docs, transcripts)
+python3 scripts/wiki_ingest.py demo path/to/article.md --kind articles
+python3 scripts/wiki_ingest.py demo path/to/notes/ --kind docs
+
+# 3. Compile (the LLM merges raw into pages)
+python3 scripts/wiki_compile.py demo --since-last-compile
+
+# 4. Lint the structure
+python3 scripts/wiki_lint.py demo --strict
+
+# Incremental single-page update from one new raw input
+python3 scripts/wiki_update.py demo raw/docs/new-file.md
+```
+
+All scripts go through the single `vault_writer.py` writer — atomic pipelines and the wiki share the same write boundary.
+
+**Template language.** `wiki_init.py` supports `--lang en` and `--lang ru`. The default comes from `[wiki].default_lang` in `config.toml` (falls back to `en`). Only the on-disk prose of SCHEMA.md, index.md, log.md, raw/_README.md, and core-page stubs is affected — structure and frontmatter contract are identical across languages. Wiki-spaces in different languages coexist in the same vault without conflicts.
+
 ### Templates
 
 The `templates/` directory contains a starter vault structure:
@@ -547,13 +626,22 @@ ObsidianDataWeave/
 │   ├── scan_vault.py         # Scan existing vault notes
 │   ├── rewrite_backend.py    # Semantic rewrite backend (Claude CLI)
 │   ├── config.py             # Configuration loader
-│   └── doctor.py             # Environment check
+│   ├── doctor.py             # Environment check
+│   ├── wiki_init.py          # LLM Wiki — create an empty wiki-space
+│   ├── wiki_ingest.py        # LLM Wiki — raw input intake (articles/docs/transcripts/assets)
+│   ├── wiki_compile.py       # LLM Wiki — main compile pipeline
+│   ├── wiki_update.py        # LLM Wiki — incremental single-page update
+│   ├── wiki_lint.py          # LLM Wiki — read-only structural check
+│   └── wiki_models.py        # LLM Wiki — ChangeSet / WikiPage / validation
 ├── rules/
 │   ├── atomization.md        # Atomization rules
 │   ├── taxonomy.md           # Tag taxonomy rules
 │   ├── personal_notes.md     # Personal note processing rules
-│   └── contacts.md           # Contact note processing rules
-├── templates/                # Starter vault structure
+│   ├── contacts.md           # Contact note processing rules
+│   ├── wiki_schema.md        # LLM Wiki — on-disk contract
+│   ├── wiki_compile.md       # LLM Wiki — LLM contract for compile
+│   └── wiki_update.md        # LLM Wiki — incremental merge semantics
+├── templates/                # Starter vault structure (+ templates/wiki/ for LLM Wiki)
 ├── tests/                    # Regression tests
 ├── docs/                     # Agent-facing documentation
 ├── AGENTS.md                 # Agent contract (Claude Code + Codex)

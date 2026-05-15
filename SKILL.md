@@ -29,6 +29,17 @@ trigger_phrases:
   - почисти дубли в ноутбуке
   - clean up duplicate sources
   - fix broken research import
+  - init wiki
+  - создай вики
+  - ingest into wiki
+  - залей в вики
+  - compile wiki
+  - собери вики
+  - update wiki page
+  - обнови вики
+  - lint wiki
+  - проверь вики
+  - wiki по проекту
 ---
 
 # ObsidianDataWeave Claude Adapter
@@ -56,6 +67,22 @@ Use the repo-local `AGENTS.md` as the primary contract.
   `python3 scripts/research_notebook.py dedupe "<notebook_id>" --dry-run`
 - Validate setup:
   `python3 scripts/doctor.py`
+- Initialize a new LLM Wiki space:
+  `python3 scripts/wiki_init.py <slug> --mode project --title "Project Name"`
+  Modes: `project` (fixed core pages) or `corpus` (entities-only).
+  Add `--lang ru` (or `--lang en`) to pick template language; defaults to
+  `[wiki].default_lang` from `config.toml` (`en` if unset). Each language has
+  its own `templates/wiki/<lang>/` tree — affects SCHEMA, index, log, raw
+  README, and core-page stubs. Different langs coexist fine within one vault.
+- Ingest raw inputs into a wiki-space:
+  `python3 scripts/wiki_ingest.py <slug> <file-or-dir> --kind {articles|docs|transcripts|assets}`
+- Compile the wiki (LLM merges raw into pages):
+  `python3 scripts/wiki_compile.py <slug> --since-last-compile`
+  Add `--dry-run` to print the prompt without calling the backend.
+- Update one page from a single new raw input (incremental):
+  `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
+- Lint a wiki-space (or all of them):
+  `python3 scripts/wiki_lint.py [<slug>] [--strict]`
 
 ## NotebookLM Workflow (direct control)
 
@@ -154,6 +181,53 @@ python3 scripts/research_notebook.py dedupe "<notebook_id>" --include-error --no
 `dedupe` groups sources by URL (with title as fallback), keeps the first
 occurrence of each group, and can optionally delete sources stuck in error
 state. Always preview with `--dry-run` before running destructive deletes.
+
+## LLM Wiki
+
+A separate **compiled knowledge layer** (Karpathy-style) that lives next
+to atomic notes inside the same vault but in a strictly isolated folder:
+`<vault>/<wiki_folder>/<project-slug>/`. Wiki pages never appear outside
+this folder; atomic notes never appear inside it. The folder name comes
+from `[wiki].wiki_folder` in `config.toml` (default `"LLM Wiki"`).
+
+The wiki has three layers:
+
+- **raw/** — immutable inputs (articles, docs, transcripts, assets)
+  added by `wiki_ingest.py`. Never modified by any script.
+- **pages/ entities/ concepts/ comparisons/ queries/** — compiled
+  knowledge layer. `wiki_compile.py` reads raw + the existing wiki
+  snapshot, calls the LLM, and merges the result back. Existing
+  wikilinks are preserved across compile passes (load-bearing safety
+  property — `WIKI_LINKS_LOST` exit 5 if violated).
+- **SCHEMA.md / index.md / log.md** — meta layer. SCHEMA is frozen
+  after init; index is regenerated each compile; log is append-only.
+
+Two modes:
+
+- **project mode** — fixed core pages (overview, architecture,
+  components, workflows, goals-and-roadmap, glossary, open-questions).
+  Use for documenting a single coherent system.
+- **corpus mode** — only entities/concepts grow as raw is added. Use
+  for a reading-list-style knowledge base.
+
+**Critical isolation rule:** `wiki_compile.py` does **not** read atomic
+notes, MOCs, or contacts. Wiki pages link only to other pages in the
+same wiki-space (or to `[[?slug]]` open-question markers).
+
+Typical workflow:
+
+```
+wiki_init.py demo --mode project --title "Demo Project"
+wiki_ingest.py demo path/to/article.md --kind articles
+wiki_compile.py demo --since-last-compile
+wiki_lint.py demo --strict
+```
+
+**Template language.** `wiki_init.py` ships templates in English (`en`)
+and Russian (`ru`). Pick per-invocation with `--lang ru`, or set
+`[wiki].default_lang` in `config.toml`. Choice only affects on-disk prose
+of meta files and core-page stubs — wiki structure, frontmatter contract,
+and pipeline behavior are language-agnostic.
 
 ## Rules
 - Prefer the repository's `AGENTS.md`, `rules/*.md`, and script help output over global instructions.

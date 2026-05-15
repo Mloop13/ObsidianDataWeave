@@ -42,6 +42,21 @@ Agents should treat this file as the canonical integration contract for both Cla
     `python3 scripts/research_notebook.py dedupe "<notebook_id>" --dry-run`
     Safe automation form:
     `python3 scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive`
+11. Initialize a new LLM Wiki space:
+    `python3 scripts/wiki_init.py <slug> --mode project --title "Project"`
+    Modes: `project` (fixed core pages) or `corpus` (entities-only).
+    Add `--lang ru` (or `--lang en`) to pick template language; defaults to
+    `[wiki].default_lang` in `config.toml` (`en` if unset).
+12. Ingest raw inputs into a wiki-space:
+    `python3 scripts/wiki_ingest.py <slug> <file-or-dir> --kind {articles|docs|transcripts|assets}`
+13. Compile a wiki-space (LLM merges raw into pages):
+    `python3 scripts/wiki_compile.py <slug> --since-last-compile`
+    Safe automation form:
+    `python3 scripts/wiki_compile.py <slug> --since-last-compile --on-conflict overwrite`
+14. Update one page from a single new raw input (incremental merge):
+    `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
+15. Lint wiki-space integrity:
+    `python3 scripts/wiki_lint.py [<slug>] [--strict]`
 
 ## Workflow Mapping
 Common user intent -> command:
@@ -65,25 +80,87 @@ Common user intent -> command:
 - "dry-run research import" -> `python3 scripts/research_notebook.py run "<notebook_id>" "<query>" --dry-run`
 - "dedupe notebook sources" / "почисти дубли источников в ноутбуке" -> `python3 scripts/research_notebook.py dedupe "<notebook_id>" --dry-run`
 - "clean up broken research import" -> `python3 scripts/research_notebook.py dedupe "<notebook_id>" --include-error --non-interactive`
+- "init wiki" / "создай вики <slug>" -> `python3 scripts/wiki_init.py <slug> --mode project --title "<title>"` (+ `--lang ru|en` if user specifies language; otherwise `[wiki].default_lang` from `config.toml`)
+- "ingest <path> в вики <slug>" / "залей в вики" -> `python3 scripts/wiki_ingest.py <slug> <path> --kind <kind>`
+- "compile wiki" / "собери вики <slug>" -> `python3 scripts/wiki_compile.py <slug> --since-last-compile`
+- "update wiki page" / "обнови вики <slug> <raw-path>" -> `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
+- "lint wiki" / "проверь вики" -> `python3 scripts/wiki_lint.py [<slug>] --strict`
 
 ## Important Constraints
-- `scripts/vault_writer.py` is the only script allowed to write generated note files into `vault_path`.
+- `scripts/vault_writer.py` is the only script allowed to write generated note files into `vault_path`. This includes wiki pages — `wiki_compile.py` always invokes `vault_writer.py` as a subprocess.
+- The LLM Wiki contour (`<vault>/<wiki_folder>/<slug>/`) is strictly isolated from atomic notes / MOCs / contacts. `wiki_compile.py` does **not** read atomic notes, and atomic processors do **not** read wiki pages. Crossing the boundary triggers `WIKI_WRITE_FORBIDDEN` from `vault_writer.py`.
+- `wiki_compile.py` rejects any ChangeSet where an existing page lost a `[[wikilink]]` between snapshot and merge. Exit code 5, marker `WIKI_LINKS_LOST`. Never bypass with `--force` or by stripping `expected_existing_links` — fix the root cause in the prompt or the LLM output.
 - `scripts/process.py`, `scripts/process_note.py`, and `scripts/process_notebook.py` rely on the local `claude` CLI (or `codex`) for the semantic rewrite step.
 - `scripts/fetch_notebook.py` and `scripts/process_notebook.py` require `notebooklm-py` to be installed and an authenticated NotebookLM session (`notebooklm login`).
 - Agents must prefer repo-local files over global home-directory files.
 - `config.toml` is local, machine-specific state. Never overwrite it unless explicitly asked.
 - `processed.json`, `dedup_reviewed.json`, staging artifacts, and vault contents are runtime state. Do not delete them unless explicitly asked.
 
+## LLM Wiki
+
+A separate, isolated knowledge contour. Lives at
+`<vault>/<wiki_folder>/<slug>/` (default `wiki_folder = "LLM Wiki"`).
+Each `<slug>/` is a self-contained wiki-space.
+
+Three layers per wiki-space:
+
+- **raw/** — immutable inputs (`articles/`, `docs/`, `transcripts/`,
+  `assets/`). Added by `wiki_ingest.py`. Never modified by any script.
+- **pages/ + entities/ + concepts/ + comparisons/ + queries/** —
+  the compiled knowledge layer. `wiki_compile.py` reads raw + the
+  existing snapshot, calls the LLM, and merges back via
+  `vault_writer.py`. Existing `[[wikilinks]]` are preserved across
+  passes (load-bearing safety property — `WIKI_LINKS_LOST` exit 5
+  if violated).
+- **SCHEMA.md / index.md / log.md** — meta layer. SCHEMA is frozen
+  after init; index is regenerated each compile; log is append-only.
+
+Two modes (set at init via `--mode`):
+
+- **project** — fixed core pages (overview, architecture, components,
+  workflows, goals-and-roadmap, glossary, open-questions). Use for
+  documenting a single coherent system.
+- **corpus** — only entities/concepts grow as raw is added. Use for
+  reading-list-style or rule-set knowledge bases without a fixed
+  centre.
+
+Template language: `wiki_init.py` ships templates in `en` and `ru`.
+Pick per-invocation with `--lang ru|en`, or set `[wiki].default_lang`
+in `config.toml` (falls back to `en`). Choice only affects on-disk
+prose of meta files and core-page stubs — structure, frontmatter
+contract, and pipeline behavior are language-agnostic.
+
+Typical workflow:
+
+```
+wiki_init.py <slug> --mode {project|corpus} --title "<title>"
+wiki_ingest.py <slug> path/to/raw --kind {articles|docs|transcripts|assets}
+wiki_compile.py <slug> --since-last-compile
+wiki_lint.py <slug> --strict
+```
+
+The LLM-side contract for compile is in `rules/wiki_compile.md`. The
+on-disk page contract (frontmatter, page_types, statuses) is in
+`rules/wiki_schema.md`. Incremental-merge semantics for
+`wiki_update.py` are in `rules/wiki_update.md`. Read these before any
+work that touches a wiki-space — they are authoritative over this
+overview.
+
 ## Required Local Files
-- `config.toml`: local runtime configuration
-- `tags.yaml`: canonical taxonomy
+- `config.toml`: local runtime configuration (now includes `[wiki]` section)
+- `tags.yaml`: canonical taxonomy for atomic notes
+- `wiki_tags.yaml`: separate tag whitelist for the LLM Wiki contour
 - `rules/atomization.md`: note-splitting rules
 - `rules/taxonomy.md`: tags, MOC, wikilink rules
 - `rules/personal_notes.md`: personal note rules
+- `rules/contacts.md`: contact note rules
+- `rules/wiki_schema.md`: on-disk contract for every wiki page
+- `rules/wiki_compile.md`: ChangeSet shape and compile-time LLM contract
+- `rules/wiki_update.md`: incremental-merge guidance for `wiki_update.py`
+- `templates/wiki/`: SCHEMA / index / log / raw README / 7 core page stubs
 - `SKILL.md`: Claude-facing adapter over this contract
 - `SKILL_PERSONAL.md`: prompt header for personal note processing
 - `SKILL_CONTACTS.md`: prompt header for contact note processing
-- `rules/contacts.md`: contact note rules
 
 ## CLI Contracts
 - `scripts/process.py`
@@ -115,6 +192,25 @@ Common user intent -> command:
   - `dedupe` flags: `--key auto|url|title`, `--include-error`, `--dry-run`, `--non-interactive`, `--profile NAME`
   - Behavior: drives `notebooklm-py` Python API directly, so IMPORT_RESEARCH is a one-shot call with no retry-on-timeout duplication. Dedupe subcommand groups existing sources by URL (or title) and deletes everything except the first occurrence per group, optionally also removing sources in error state.
   - Output: progress + summary on stderr; dry-run plan or empty-plan JSON on stdout
+- `scripts/wiki_init.py`
+  - Input: `<slug>` plus `--mode {project|corpus} --title --description --force --non-interactive`
+  - Exit codes: 0 (created), 1 (bad args), 2 (`WIKI_ALREADY_EXISTS`)
+  - Output: confirmation line on stdout; no LLM is called
+- `scripts/wiki_ingest.py`
+  - Input: `<slug> <file-or-dir-or-url>` plus `--kind {articles|docs|transcripts|assets}`, `--label`, `--no-compile`, `--backend`
+  - Exit codes: 0, 1, 2 (`WIKI_PROJECT_NOT_FOUND`), 3 (`WIKI_INGEST_EMPTY`), 4
+  - Behavior: writes one .md per input under `raw/<kind>/<date>-<slug>.md`; chains `wiki_compile.py --since-last-compile` unless `--no-compile`
+- `scripts/wiki_compile.py`
+  - Input: `<slug>` plus `--since-last-compile`, `--raw-only <glob>`, `--update-only`, `--dry-run`, `--on-conflict {skip|overwrite|rename|ask}`, `--backend {auto|claude|codex}`, `--timeout-seconds N`
+  - Exit codes: 0, 1, 2 (`WIKI_PROJECT_NOT_FOUND`), 3 (`WIKI_VALIDATION_FAILED`), 4 (`WIKI_RAW_LIMIT_EXCEEDED`), 5 (`WIKI_LINKS_LOST`)
+  - Behavior: snapshots existing wiki, calls LLM via `rewrite_backend`, validates ChangeSet, materializes pages into staging, subprocesses `vault_writer.py`. The wikilink-preservation guard (exit 5) is the load-bearing safety property — never bypass it.
+- `scripts/wiki_update.py`
+  - Input: `<slug> <path-in-raw>` plus any flags forwarded to `wiki_compile.py`
+  - Behavior: convenience wrapper for `wiki_compile.py <slug> --raw-only <path> --update-only`
+- `scripts/wiki_lint.py`
+  - Input: optional `<slug>` plus `--json --strict`
+  - Exit codes: 0 (clean), 1 (`WIKI_LINT_FAILED`)
+  - Read-only structural checks: meta/core pages present, frontmatter complete, wikilinks resolve, entities not duplicated, raw layout valid
 
 ## Recommended Agent Behavior
 - Start with `python3 scripts/doctor.py` if setup is uncertain.

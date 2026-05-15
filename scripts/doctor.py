@@ -79,6 +79,33 @@ def main() -> None:
     ok &= check_path("rules/contacts.md", PROJECT_ROOT / "rules" / "contacts.md")
     ok &= check_path("tags.yaml", PROJECT_ROOT / "tags.yaml")
 
+    # LLM Wiki contour
+    ok &= check_path("rules/wiki_schema.md", PROJECT_ROOT / "rules" / "wiki_schema.md")
+    ok &= check_path("rules/wiki_compile.md", PROJECT_ROOT / "rules" / "wiki_compile.md")
+    ok &= check_path("rules/wiki_update.md", PROJECT_ROOT / "rules" / "wiki_update.md")
+    ok &= check_path("wiki_tags.yaml", PROJECT_ROOT / "wiki_tags.yaml")
+    wiki_templates_dir = PROJECT_ROOT / "templates" / "wiki"
+    ok &= check_path("templates/wiki/", wiki_templates_dir)
+    required_templates = [
+        "SCHEMA.template.md",
+        "index.template.md",
+        "log.template.md",
+        "raw/_README.template.md",
+        "pages/overview.template.md",
+        "pages/architecture.template.md",
+        "pages/components.template.md",
+        "pages/workflows.template.md",
+        "pages/goals-and-roadmap.template.md",
+        "pages/glossary.template.md",
+        "pages/open-questions.template.md",
+    ]
+    for lang in ("en", "ru"):
+        lang_dir = wiki_templates_dir / lang
+        ok &= check_path(f"templates/wiki/{lang}/", lang_dir)
+        if lang_dir.exists():
+            for rel in required_templates:
+                ok &= check_path(f"templates/wiki/{lang}/{rel}", lang_dir / rel)
+
     config_path = PROJECT_ROOT / "config.toml"
     ok &= check_path("config.toml", config_path)
 
@@ -101,6 +128,19 @@ def main() -> None:
                 )
             else:
                 print("WARN     processed.json coverage: file missing, rebuild recommended")
+
+        wiki_cfg = cfg.get("wiki") if isinstance(cfg, dict) else None
+        if wiki_cfg:
+            wiki_folder = wiki_cfg.get("wiki_folder", "LLM Wiki")
+            wiki_root = vault_path / wiki_folder
+            if wiki_root.exists():
+                spaces = sorted(p.name for p in wiki_root.iterdir() if p.is_dir())
+                count = len(spaces)
+                preview = ", ".join(spaces[:5])
+                suffix = f" ({preview}{', …' if count > 5 else ''})" if count else ""
+                print(f"OK       wiki spaces: {count}{suffix}")
+            else:
+                print(f"INFO     wiki spaces: 0 (wiki_folder {wiki_root} not created yet)")
 
     ok &= check_command("python3")
     ok &= check_command("claude")

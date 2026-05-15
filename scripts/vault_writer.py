@@ -10,11 +10,17 @@ Routing by note_type (from frontmatter):
     atomic  -> vault_path/notes_folder
     moc     -> vault_path/moc_folder
     source  -> vault_path/source_folder
+    contact -> vault_path/contacts_folder
+    wiki    -> vault_path/wiki_folder/<wiki_project>/<bucket>  (see _wiki_dest)
     <other> -> vault_path/notes_folder  (fallback)
 
 Deduplication: (source_doc, title) pair tracked in processed.json registry.
 MOC files are always overwritten (auto-generated, no manual edits expected).
 MOC written last (sorted after all atomic notes).
+
+Wiki notes always overwrite themselves: wiki_compile.py emits a fully merged
+body, so the existing dedup branch is skipped. Wiki meta-pages (SCHEMA.md,
+index.md, log.md) sort to the end of the run alongside MOC files.
 
 All diagnostics go to stderr. Summary printed to both stdout and stderr.
 """
@@ -30,9 +36,11 @@ from pathlib import Path
 import yaml
 
 try:
-    from scripts.config import PROJECT_ROOT, REGISTRY_PATH, load_config as _load_config
+    from scripts.config import REGISTRY_PATH, load_config as _load_config
+    from scripts.wiki_models import WIKI_NOTE_TYPE, WIKI_RAW_KINDS, is_valid_slug
 except ModuleNotFoundError:
-    from config import PROJECT_ROOT, REGISTRY_PATH, load_config as _load_config
+    from config import REGISTRY_PATH, load_config as _load_config
+    from wiki_models import WIKI_NOTE_TYPE, WIKI_RAW_KINDS, is_valid_slug
 
 
 def load_config() -> dict:
@@ -155,17 +163,28 @@ def resolve_conflict(
 # ── Vault destination routing ───────────────────────────────────────────────────
 
 
-def get_vault_dest(note_type: str, config: dict) -> Path:
+def get_vault_dest(
+    note_type: str, config: dict, frontmatter: dict | None = None
+) -> Path:
     """Return the vault subfolder Path for a given note_type.
 
     Routing:
         atomic  -> vault_path/notes_folder
         moc     -> vault_path/moc_folder
         source  -> vault_path/source_folder
+        contact -> vault_path/contacts_folder
+        wiki    -> vault_path/wiki_folder/<wiki_project>/<bucket>  (see _wiki_dest)
         <other> -> vault_path/notes_folder  (fallback)
+
+    `frontmatter` is required for note_type=='wiki' so the wiki_project +
+    wiki_page_type fields can drive sub-folder routing. Other note_types
+    ignore it (back-compat with all existing call sites).
     """
     vault_path = Path(config["vault"]["vault_path"])
     vault_cfg = config.get("vault", {})
+
+    if note_type == WIKI_NOTE_TYPE:
+        return _wiki_dest(config, frontmatter or {})
 
     if note_type == "moc":
         folder = vault_cfg.get("moc_folder", "MOCs")
@@ -180,22 +199,95 @@ def get_vault_dest(note_type: str, config: dict) -> Path:
     return vault_path / folder
 
 
+def _wiki_dest(config: dict, frontmatter: dict) -> Path:
+    """Resolve the on-disk folder for a wiki page.
+
+    Layout: <vault>/<wiki_folder>/<wiki_project>/<bucket>/
+
+    Buckets per wiki_page_type:
+        core       -> pages/
+        entity     -> entities/
+        concept    -> concepts/
+        comparison -> comparisons/
+        query      -> queries/
+        meta       -> <root>           (SCHEMA.md, index.md, log.md)
+        raw        -> raw/<raw_kind>/  (raw_kind from frontmatter, default 'docs')
+
+    Raises ValueError on missing wiki_project, missing/unknown wiki_page_type,
+    or unknown raw_kind. Raising (rather than silently routing to a default)
+    keeps wiki contour leaks loud and immediate.
+    """
+    vault_path = Path(config["vault"]["vault_path"])
+    wiki_cfg = config.get("wiki", {})
+    wiki_folder = wiki_cfg.get("wiki_folder", "LLM Wiki")
+
+    project = frontmatter.get("wiki_project")
+    if not isinstance(project, str) or not project:
+        raise ValueError(
+            "wiki frontmatter missing 'wiki_project' — cannot resolve destination"
+        )
+    if not is_valid_slug(project):
+        raise ValueError(
+            f"wiki_project={project!r} is not a valid kebab-case slug; cannot route"
+        )
+
+    page_type = frontmatter.get("wiki_page_type")
+    if page_type not in {"core", "entity", "concept", "comparison", "query", "meta", "raw"}:
+        raise ValueError(
+            f"wiki frontmatter has invalid wiki_page_type={page_type!r}"
+        )
+
+    project_root = vault_path / wiki_folder / project
+
+    if page_type == "core":
+        return project_root / "pages"
+    if page_type == "entity":
+        return project_root / "entities"
+    if page_type == "concept":
+        return project_root / "concepts"
+    if page_type == "comparison":
+        return project_root / "comparisons"
+    if page_type == "query":
+        return project_root / "queries"
+    if page_type == "meta":
+        return project_root
+    # raw
+    raw_kind = frontmatter.get("raw_kind", "docs")
+    if raw_kind not in WIKI_RAW_KINDS:
+        raise ValueError(
+            f"wiki raw frontmatter has invalid raw_kind={raw_kind!r}; "
+            f"allowed: {WIKI_RAW_KINDS}"
+        )
+    return project_root / "raw" / raw_kind
+
+
 # ── Sort key: MOC last ──────────────────────────────────────────────────────────
 
 
 def _moc_sort_key(md_file: Path) -> tuple[int, str]:
-    """Sort key that places MOC files after all atomic notes.
+    """Sort key that places MOC and wiki meta-pages after all other notes.
 
-    Detection: frontmatter note_type=='moc' OR stem ending with ' — MOC'.
+    Detection: frontmatter note_type=='moc' OR stem ending with ' — MOC'
+    OR wiki meta-page (note_type=='wiki' AND wiki_page_type=='meta').
     Fallback (cannot read file): treat as non-MOC (sort first).
+
+    Wiki meta-pages (SCHEMA.md, index.md, log.md) sort last so index.md is
+    regenerated AFTER all entity/concept pages have been written.
     """
+    is_late = False
     try:
         content = md_file.read_text(encoding="utf-8")
         fm = parse_frontmatter(content)
-        is_moc = fm.get("note_type", "") == "moc" or md_file.stem.endswith(" \u2014 MOC")
+        if fm.get("note_type", "") == "moc" or md_file.stem.endswith(" \u2014 MOC"):
+            is_late = True
+        elif (
+            fm.get("note_type", "") == WIKI_NOTE_TYPE
+            and fm.get("wiki_page_type", "") == "meta"
+        ):
+            is_late = True
     except OSError:
-        is_moc = False
-    return (1 if is_moc else 0, md_file.name)
+        pass
+    return (1 if is_late else 0, md_file.name)
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
@@ -267,9 +359,12 @@ def main() -> None:
                 file=sys.stderr,
             )
 
-    # Collect all .md files (skip non-note files like proposed-tags.md)
+    # Collect all .md files (skip non-note files like proposed-tags.md).
+    # rglob lets wiki_compile.py group pages into per-type subfolders inside
+    # staging without confusing this writer; routing is still driven entirely
+    # by frontmatter, not by the staging directory layout.
     md_files = [
-        p for p in staging_dir.glob("*.md")
+        p for p in staging_dir.rglob("*.md")
         if p.name != "proposed-tags.md"
     ]
     if not md_files:
@@ -318,8 +413,11 @@ def main() -> None:
         if not source_doc and title in atom_plan_source:
             source_doc = atom_plan_source[title]
 
-        # Dedup check — MOC always overwrites, atomic notes check registry
-        if note_type != "moc" and source_doc:
+        # Dedup check — MOC always overwrites, wiki always overwrites
+        # (wiki_compile.py emits a fully merged body and would lose data if
+        # the writer skipped on conflict). Other note_types check the
+        # registry by (source_doc, title) pair.
+        if note_type not in ("moc", WIKI_NOTE_TYPE) and source_doc:
             existing = registry.get(source_doc, {})
             existing_titles: list[str] = existing.get("note_titles", [])
             if title in existing_titles:
@@ -334,8 +432,16 @@ def main() -> None:
                     continue
                 # action == "overwrite": fall through to copy
 
-        # Determine vault destination folder
-        dest_dir = get_vault_dest(note_type, config)
+        # Determine vault destination folder. Wiki pages need the frontmatter
+        # to resolve <wiki_project>/<bucket>; other types ignore it.
+        try:
+            dest_dir = get_vault_dest(note_type, config, frontmatter=fm)
+        except ValueError as exc:
+            print(
+                f"ERROR: cannot route {md_file.name}: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         dest_path = dest_dir / md_file.name
