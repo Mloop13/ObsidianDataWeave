@@ -6,9 +6,13 @@ import pytest
 
 from scripts.wiki_compile import (
     ValidationError,
+    _compute_post_compile_pages,
+    _detect_index_lang_and_title,
     _extract_wikilink_targets,
+    _render_index_markdown,
     _split_frontmatter,
     materialize_to_staging,
+    regenerate_index_to_staging,
     select_raw_inputs,
     snapshot_wiki_space,
     validate_changeset,
@@ -328,3 +332,179 @@ class TestMaterialize:
         assert text.startswith("---\n")
         assert "wiki_project: demo" in text
         assert "[[postgres]]" in text
+
+
+# ── Index regeneration ──────────────────────────────────────────────────────
+
+
+class TestDetectIndexLangAndTitle:
+    def test_detects_ru_locale_and_title(self):
+        body = "# Индекс — Acme Project\n\nblah\n"
+        assert _detect_index_lang_and_title(body, "acme") == ("ru", "Acme Project")
+
+    def test_detects_en_locale_and_title(self):
+        body = "# Index — Acme Project\n"
+        assert _detect_index_lang_and_title(body, "acme") == ("en", "Acme Project")
+
+    def test_missing_index_falls_back_to_slug(self):
+        assert _detect_index_lang_and_title("", "acme") == ("en", "acme")
+
+    def test_unknown_prefix_keeps_h1_but_defaults_lang(self):
+        lang, title = _detect_index_lang_and_title("# Something Else\n", "acme")
+        assert lang == "en"
+        assert title == "Something Else"
+
+
+class TestComputePostCompilePages:
+    def test_creates_added_updates_overwrite_renames_drop_old(self):
+        snapshot = {
+            "pages": {
+                "entities/old.md": {"frontmatter": {}, "body": "old"},
+                "concepts/foo.md": {"frontmatter": {}, "body": "v1"},
+            }
+        }
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/new.md",
+                    frontmatter=_good_fm("demo", "entity", "new"),
+                    body="# New",
+                )
+            ],
+            updates=[
+                WikiPageUpdate(
+                    rel_path="concepts/foo.md",
+                    expected_existing_links=[],
+                    frontmatter=_good_fm("demo", "concept", "foo"),
+                    body="# Foo v2",
+                )
+            ],
+            renames=[{"from": "entities/old.md", "to": "entities/renamed.md"}],
+        )
+        out = _compute_post_compile_pages(snapshot, cs)
+        assert "entities/old.md" not in out
+        assert "entities/new.md" in out
+        assert out["concepts/foo.md"]["body"] == "# Foo v2"
+
+    def test_none_changeset_returns_snapshot_pages(self):
+        snapshot = {"pages": {"entities/x.md": {"frontmatter": {}, "body": "b"}}}
+        out = _compute_post_compile_pages(snapshot, None)
+        assert out == snapshot["pages"]
+
+
+class TestRenderIndexMarkdown:
+    def _final(self):
+        return {
+            "SCHEMA.md": {"frontmatter": {}, "body": ""},
+            "log.md": {"frontmatter": {}, "body": ""},
+            "index.md": {"frontmatter": {}, "body": ""},
+            "pages/overview.md": {"frontmatter": {}, "body": ""},
+            "pages/architecture.md": {"frontmatter": {}, "body": ""},
+            "entities/kafka.md": {"frontmatter": {}, "body": ""},
+            "entities/postgres.md": {"frontmatter": {}, "body": ""},
+            "concepts/idempotency.md": {"frontmatter": {}, "body": ""},
+            "comparisons/a-vs-b.md": {"frontmatter": {}, "body": ""},
+            "raw/docs/note.md": {"frontmatter": {}, "body": ""},
+        }
+
+    def test_project_mode_lists_core_and_buckets_in_en(self):
+        text = _render_index_markdown(
+            final_pages=self._final(),
+            slug="demo",
+            mode="project",
+            lang="en",
+            title="Demo",
+            today="2026-05-16",
+        )
+        assert "# Index — Demo" in text
+        assert "## Core pages" in text
+        assert "- [[architecture]]" in text
+        assert "- [[overview]]" in text
+        assert "## Entities" in text
+        assert "- [[kafka]]" in text
+        assert "- [[postgres]]" in text
+        assert "- [[idempotency]]" in text
+        assert "- [[a-vs-b]]" in text
+        # Queries section exists even when empty.
+        assert "## Queries" in text
+        assert "_(empty)_" in text
+        # Meta + raw pages never appear in index.
+        assert "[[SCHEMA]]" not in text
+        assert "[[log]]" not in text
+        assert "[[note]]" not in text
+
+    def test_corpus_mode_renders_corpus_placeholder_for_core(self):
+        text = _render_index_markdown(
+            final_pages={"entities/k.md": {"frontmatter": {}, "body": ""}},
+            slug="demo",
+            mode="corpus",
+            lang="en",
+            title="Demo",
+            today="2026-05-16",
+        )
+        assert "corpus mode" in text
+        assert "- [[k]]" in text
+
+    def test_ru_locale_uses_russian_headers(self):
+        text = _render_index_markdown(
+            final_pages={"entities/k.md": {"frontmatter": {}, "body": ""}},
+            slug="demo",
+            mode="project",
+            lang="ru",
+            title="Демо",
+            today="2026-05-16",
+        )
+        assert "# Индекс — Демо" in text
+        assert "## Core-страницы" in text
+        # Bucket headers stay language-neutral.
+        assert "## Entities" in text
+
+
+class TestRegenerateIndexToStaging:
+    def test_writes_index_md_into_staging(self, tmp_path: Path):
+        snapshot = {
+            "pages": {
+                "index.md": {
+                    "frontmatter": {},
+                    "body": "# Index — Demo\n\nold body",
+                },
+                "entities/kafka.md": {"frontmatter": {}, "body": "# Kafka"},
+            }
+        }
+        regenerate_index_to_staging(
+            tmp_path, slug="demo", snapshot=snapshot, cs=None, mode="project"
+        )
+        out = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert out.startswith("---\n")
+        assert "wiki_project: demo" in out
+        assert "# Index — Demo" in out
+        assert "- [[kafka]]" in out
+
+    def test_includes_changeset_creates_in_listing(self, tmp_path: Path):
+        snapshot = {
+            "pages": {
+                "index.md": {
+                    "frontmatter": {},
+                    "body": "# Index — Demo",
+                }
+            }
+        }
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/new.md",
+                    frontmatter=_good_fm("demo", "entity", "new"),
+                    body="# New",
+                )
+            ],
+        )
+        regenerate_index_to_staging(
+            tmp_path, slug="demo", snapshot=snapshot, cs=cs, mode="corpus"
+        )
+        out = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "- [[new]]" in out
+        assert "corpus mode" in out
