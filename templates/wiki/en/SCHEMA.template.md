@@ -46,7 +46,8 @@ ingest or compile cycles.
 ├── entities/          # services, integrations, external systems
 ├── concepts/          # domain concepts
 ├── comparisons/       # A vs B writeups
-└── queries/           # saved useful questions and answers
+├── queries/           # saved useful questions and answers
+└── readouts/          # dated patch/experiment readouts (immutable after verdict)
 ```
 
 ## Frontmatter contract
@@ -55,7 +56,7 @@ Every wiki page **must** carry these fields:
 
 - `note_type: wiki`
 - `wiki_project: {{slug}}` (must match enclosing folder)
-- `wiki_page_type`: one of `core | entity | concept | comparison | query | raw | meta`
+- `wiki_page_type`: one of `core | entity | concept | comparison | query | readout | raw | meta`
 - `wiki_status`: one of `stub | draft | stable | stale | contradicted | ingested`
 - `date`: ISO date of last touch
 - `source_doc`: synthetic id `wiki:{{slug}}:<page_type>:<stem>` (raw notes may

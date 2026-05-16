@@ -465,6 +465,7 @@ _INDEX_LOCALES: dict[str, dict[str, Any]] = {
             "concepts": "Concepts",
             "comparisons": "Comparisons",
             "queries": "Queries",
+            "readouts": "Readouts",
         },
         "empty": "_(empty)_",
         "empty_core_corpus": "_(corpus mode — no fixed core pages)_",
@@ -482,6 +483,7 @@ _INDEX_LOCALES: dict[str, dict[str, Any]] = {
             "concepts": "Concepts",
             "comparisons": "Comparisons",
             "queries": "Queries",
+            "readouts": "Readouts",
         },
         "empty": "_(пусто)_",
         "empty_core_corpus": "_(режим corpus — фиксированных core-страниц нет)_",
@@ -493,6 +495,7 @@ _INDEX_SECTION_DIRS: tuple[tuple[str, str], ...] = (
     ("concepts", "concepts/"),
     ("comparisons", "comparisons/"),
     ("queries", "queries/"),
+    ("readouts", "readouts/"),
 )
 
 

@@ -26,6 +26,7 @@ WIKI_PAGE_TYPES: tuple[str, ...] = (
     "concept",
     "comparison",
     "query",
+    "readout",
     "raw",
     "meta",
 )

@@ -54,7 +54,7 @@ SUPPORTED_LANGS = ("en", "ru")
 DEFAULT_LANG = "en"
 
 # Sub-directories that exist in every wiki-space, regardless of mode.
-ALWAYS_DIRS = ("entities", "concepts", "comparisons", "queries")
+ALWAYS_DIRS = ("entities", "concepts", "comparisons", "queries", "readouts")
 
 
 def render_template(rel: str, ctx: dict, lang: str = DEFAULT_LANG) -> str:

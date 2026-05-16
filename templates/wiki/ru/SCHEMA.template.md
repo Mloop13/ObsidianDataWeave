@@ -47,7 +47,8 @@ wiki_mode: {{mode}}
 ├── entities/          # сервисы, интеграции, внешние системы
 ├── concepts/          # доменные концепты
 ├── comparisons/       # разборы A vs B
-└── queries/           # сохранённые полезные запросы и ответы
+├── queries/           # сохранённые полезные запросы и ответы
+└── readouts/          # датированные отчёты о патчах/экспериментах (immutable после verdict'а)
 ```
 
 ## Контракт frontmatter
@@ -56,7 +57,7 @@ wiki_mode: {{mode}}
 
 - `note_type: wiki`
 - `wiki_project: {{slug}}` (должен совпадать с именем родительской папки)
-- `wiki_page_type`: одно из `core | entity | concept | comparison | query | raw | meta`
+- `wiki_page_type`: одно из `core | entity | concept | comparison | query | readout | raw | meta`
 - `wiki_status`: одно из `stub | draft | stable | stale | contradicted | ingested`
 - `date`: ISO-дата последнего изменения
 - `source_doc`: синтетический id `wiki:{{slug}}:<page_type>:<stem>` (raw-заметки
