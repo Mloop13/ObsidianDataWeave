@@ -79,6 +79,22 @@ INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 DEBUG_RESPONSE_PATH = Path("/tmp/dw/debug-response.json")
 
 
+_OUTER_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```\s*\Z")
+
+
+def _strip_outer_code_fence(text: str) -> str:
+    """Strip a wrapping ```json fence from an LLM response, preserving inner ``` blocks.
+
+    A naive non-greedy fence regex like ``` … ``` matches the FIRST closing ``` it
+    finds — which breaks the moment the LLM's JSON body strings contain code
+    examples with their own ``` fences. Anchoring the match to end-of-text with
+    \\Z forces the closing fence to be the LAST one.
+    """
+    text = text.strip()
+    fence = _OUTER_FENCE_RE.match(text)
+    return fence.group(1).strip() if fence else text
+
+
 def _strip_code(text: str) -> str:
     """Drop fenced/inline code spans before extracting wikilinks.
 
@@ -825,11 +841,7 @@ def main() -> int:
     duration_s = (datetime.now(timezone.utc) - started).total_seconds()
     print(f"INFO: backend={backend} returned in {duration_s:.1f}s", file=sys.stderr)
 
-    # Strip optional code fences before parsing.
-    text = response.strip()
-    fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if fence:
-        text = fence.group(1).strip()
+    text = _strip_outer_code_fence(response)
 
     try:
         data = json.loads(text)

@@ -11,6 +11,7 @@ from scripts.wiki_compile import (
     _extract_wikilink_targets,
     _render_index_markdown,
     _split_frontmatter,
+    _strip_outer_code_fence,
     materialize_to_staging,
     regenerate_index_to_staging,
     select_raw_inputs,
@@ -89,6 +90,28 @@ class TestExtractWikilinks:
     def test_ignores_fenced_code(self):
         text = "real [[foo]]\n\n```markdown\n[[bar]]\n```\n"
         assert _extract_wikilink_targets(text) == {"foo"}
+
+
+class TestStripOuterCodeFence:
+    def test_plain_json_passes_through(self):
+        assert _strip_outer_code_fence('{"a": 1}') == '{"a": 1}'
+
+    def test_strips_json_fence(self):
+        text = '```json\n{"a": 1}\n```'
+        assert _strip_outer_code_fence(text) == '{"a": 1}'
+
+    def test_strips_plain_fence(self):
+        text = '```\n{"a": 1}\n```'
+        assert _strip_outer_code_fence(text) == '{"a": 1}'
+
+    def test_preserves_inner_fences(self):
+        """Body strings often contain ``` examples that must survive."""
+        inner = '{"body": "see ```\\nexample\\n``` here"}'
+        wrapped = f"```json\n{inner}\n```"
+        assert _strip_outer_code_fence(wrapped) == inner
+
+    def test_no_fence_returns_stripped(self):
+        assert _strip_outer_code_fence("  hello  ") == "hello"
 
 
 class TestSplitFrontmatter:
