@@ -57,6 +57,14 @@ Agents should treat this file as the canonical integration contract for both Cla
     `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
 15. Lint wiki-space integrity:
     `python3 scripts/wiki_lint.py [<slug>] [--strict]`
+16. Search the FTS5 vault memory (lexical full-text over every note):
+    `python3 scripts/memory_index.py search "<query>" --json`
+    Useful flags: `--limit N`, `--prefix` (last term as prefix), `--folder X`,
+    `--tag Y`, `--raw` (raw FTS5 syntax). The index updates automatically
+    after each vault_writer write ([memory].auto_update).
+17. Build or refresh the memory index / run the upgrade migration:
+    `python3 scripts/memory_index.py build` | `update` | `status`
+    `python3 scripts/migrate.py`  (idempotent: adds [memory] config, builds index)
 
 ## Workflow Mapping
 Common user intent -> command:

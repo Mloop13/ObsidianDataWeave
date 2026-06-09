@@ -40,6 +40,13 @@ trigger_phrases:
   - lint wiki
   - проверь вики
   - wiki по проекту
+  - search notes
+  - найди в заметках
+  - поиск по заметкам
+  - search the vault
+  - поиск по вики
+  - rebuild memory index
+  - перестрой индекс памяти
 ---
 
 # ObsidianDataWeave Claude Adapter
@@ -83,6 +90,12 @@ Use the repo-local `AGENTS.md` as the primary contract.
   `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
 - Lint a wiki-space (or all of them):
   `python3 scripts/wiki_lint.py [<slug>] [--strict]`
+- Search the vault memory (FTS5 full-text, agents should prefer `--json`):
+  `python3 scripts/memory_index.py search "<query>" --json [--limit 10] [--prefix] [--folder X] [--tag Y]`
+- Rebuild / refresh the memory index:
+  `python3 scripts/memory_index.py build` (full) or `update` (incremental)
+- Upgrade an existing install after `git pull` (config + index migration):
+  `python3 scripts/migrate.py`
 
 ## NotebookLM Workflow (direct control)
 

@@ -101,7 +101,14 @@ for path in AGENTS.md SKILL.md SKILL_PERSONAL.md rules/atomization.md rules/taxo
     fi
 done
 
-# ── Step 4: Mode-specific registration ──────────────────────────────────────
+# ── Step 4: Migrate (idempotent upgrade: [memory] config + FTS5 index) ──────
+
+echo ""
+echo "== Migrate (FTS5 memory) =="
+python3 "${REPO_DIR}/scripts/migrate.py" \
+    || echo "WARNING: migration failed (non-fatal) — run scripts/migrate.py manually"
+
+# ── Step 5: Mode-specific registration ──────────────────────────────────────
 
 register_global_skill() {
     echo ""
