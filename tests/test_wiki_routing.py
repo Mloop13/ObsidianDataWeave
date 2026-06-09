@@ -33,6 +33,7 @@ def cfg(tmp_path: Path) -> dict:
         ("concept", "concepts"),
         ("comparison", "comparisons"),
         ("query", "queries"),
+        ("readout", "readouts"),
     ],
 )
 def test_routing_by_page_type(cfg: dict, page_type: str, expected_subdir: str) -> None:

@@ -210,6 +210,7 @@ def _wiki_dest(config: dict, frontmatter: dict) -> Path:
         concept    -> concepts/
         comparison -> comparisons/
         query      -> queries/
+        readout    -> readouts/
         meta       -> <root>           (SCHEMA.md, index.md, log.md)
         raw        -> raw/<raw_kind>/  (raw_kind from frontmatter, default 'docs')
 
@@ -232,7 +233,7 @@ def _wiki_dest(config: dict, frontmatter: dict) -> Path:
         )
 
     page_type = frontmatter.get("wiki_page_type")
-    if page_type not in {"core", "entity", "concept", "comparison", "query", "meta", "raw"}:
+    if page_type not in {"core", "entity", "concept", "comparison", "query", "readout", "meta", "raw"}:
         raise ValueError(
             f"wiki frontmatter has invalid wiki_page_type={page_type!r}"
         )
@@ -249,6 +250,8 @@ def _wiki_dest(config: dict, frontmatter: dict) -> Path:
         return project_root / "comparisons"
     if page_type == "query":
         return project_root / "queries"
+    if page_type == "readout":
+        return project_root / "readouts"
     if page_type == "meta":
         return project_root
     # raw
