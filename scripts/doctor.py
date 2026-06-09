@@ -142,6 +142,32 @@ def main() -> None:
             else:
                 print(f"INFO     wiki spaces: 0 (wiki_folder {wiki_root} not created yet)")
 
+        # FTS5 memory index (scripts/memory_index.py)
+        try:
+            from scripts.memory_index import fts5_available, memory_config, status as memory_status
+        except ModuleNotFoundError:
+            from memory_index import fts5_available, memory_config, status as memory_status
+        if not fts5_available():
+            print("MISSING  sqlite3 FTS5 support — memory_index.py cannot run")
+            ok = False
+        elif not memory_config(cfg)["enabled"]:
+            print("INFO     memory index: disabled ([memory].enabled = false)")
+        else:
+            try:
+                mem_info = memory_status(cfg)
+                if mem_info["exists"]:
+                    print(
+                        f"OK       memory index: {mem_info['notes']} notes, "
+                        f"{mem_info['size_kb']} KB ({mem_info['db']})"
+                    )
+                else:
+                    print(
+                        "INFO     memory index: not built yet — run "
+                        "`python3 scripts/memory_index.py build` (or migrate.py)"
+                    )
+            except ValueError as exc:
+                print(f"INFO     memory index: skipped ({exc})")
+
     ok &= check_command("python3")
     ok &= check_command("claude")
     ok &= check_command("codex")

@@ -493,6 +493,17 @@ def main() -> None:
     print(summary, file=sys.stderr)
     print(summary)
 
+    # Best-effort FTS5 memory refresh ([memory] in config.toml). A broken or
+    # missing index must never fail the vault write itself.
+    try:
+        try:
+            from scripts.memory_index import auto_update_after_write
+        except ModuleNotFoundError:
+            from memory_index import auto_update_after_write
+        auto_update_after_write(config)
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: memory index refresh skipped: {exc}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

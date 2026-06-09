@@ -47,3 +47,22 @@ default_lang = "en"
 # the script exits with WIKI_RAW_LIMIT_EXCEEDED and asks the user to
 # compile in batches.
 max_raw_per_compile = 30
+
+[memory]
+# FTS5 full-text memory over the whole vault (replaces the legacy
+# Smart Connections embedding layer). Zero dependencies: stdlib sqlite3.
+enabled = true
+
+# Where the SQLite index lives. Empty → ~/.cache/obsidian-dataweave/
+# (one db per vault, named <vault-slug>-<hash>.db). The index is always
+# OUTSIDE the vault so vault sync (gdrive/iCloud/...) never touches it.
+db_dir = ""
+
+# "unicode61" (default — compact, word-level, Cyrillic-safe) or
+# "trigram" (substring matching like pg_trgm; needs SQLite >= 3.34,
+# index is noticeably larger).
+tokenizer = "unicode61"
+
+# Refresh the index automatically after each vault_writer write.
+# First build is always explicit: scripts/memory_index.py build (or migrate.py).
+auto_update = true
