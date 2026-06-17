@@ -1,7 +1,10 @@
-"""Tests for scripts/config.py — shared configuration module."""
+"""Tests for scripts/config.py — shared configuration module.
 
-import sys
-from pathlib import Path
+These must pass on a fresh clone / CI where config.toml (git-ignored, local
+machine state) does not exist. Schema is validated against the always-present
+committed config.example.toml, never against a live config.toml.
+"""
+
 from unittest.mock import patch
 
 import pytest
@@ -11,12 +14,25 @@ from scripts.config import (
     PROJECT_ROOT,
     REGISTRY_PATH,
     load_config,
+    tomllib,
 )
+
+EXAMPLE_CONFIG = PROJECT_ROOT / "config.example.toml"
+
+requires_toml = pytest.mark.skipif(
+    tomllib is None, reason="no TOML parser (tomllib/tomli) available"
+)
+
+
+def _load_example() -> dict:
+    with open(EXAMPLE_CONFIG, "rb") as f:
+        return tomllib.load(f)
 
 
 def test_project_root_exists():
     assert PROJECT_ROOT.exists()
-    assert (PROJECT_ROOT / "config.toml").exists()
+    # config.example.toml is committed and always present; config.toml is not.
+    assert EXAMPLE_CONFIG.exists()
 
 
 def test_registry_path_under_project():
@@ -28,19 +44,21 @@ def test_default_staging_dir():
     assert DEFAULT_STAGING_DIR == "/tmp/dw/staging"
 
 
-def test_load_config_returns_dict():
-    cfg = load_config()
-    assert isinstance(cfg, dict)
+@requires_toml
+def test_example_config_parses():
+    assert isinstance(_load_example(), dict)
 
 
-def test_load_config_has_vault_section():
-    cfg = load_config()
+@requires_toml
+def test_example_config_has_vault_section():
+    cfg = _load_example()
     assert "vault" in cfg
     assert "vault_path" in cfg["vault"]
 
 
-def test_load_config_has_rclone_section():
-    cfg = load_config()
+@requires_toml
+def test_example_config_has_rclone_section():
+    cfg = _load_example()
     assert "rclone" in cfg
     assert "staging_dir" in cfg["rclone"]
 

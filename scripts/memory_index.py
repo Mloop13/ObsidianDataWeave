@@ -294,6 +294,11 @@ def auto_update_after_write(config: dict) -> None:
     is on AND the database already exists (first build stays an explicit
     `memory_index.py build` / migrate.py step, so tests and fresh setups are
     never surprised by index creation).
+
+    When memory is wanted (enabled + auto_update) but the index was never
+    built, the write would otherwise leave the agent's memory empty with no
+    signal. To avoid that silent dead-end it prints a one-line hint to stderr
+    (once per write — vault_writer calls this once per run) and stays a no-op.
     """
     mem = memory_config(config)
     if not (mem["enabled"] and mem["auto_update"]):
@@ -304,6 +309,11 @@ def auto_update_after_write(config: dict) -> None:
         return
     db_path = db_path_for_vault(vault_path, mem["db_dir"])
     if not db_path.exists():
+        print(
+            "NOTE: vault memory index not built yet — new notes are NOT searchable "
+            "until you run: python3 scripts/memory_index.py build",
+            file=sys.stderr,
+        )
         return
     update_index(config, quiet=True)
 

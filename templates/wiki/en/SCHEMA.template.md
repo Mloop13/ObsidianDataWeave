@@ -78,3 +78,8 @@ Optional but reserved:
    wiki-space. No script appends to `log.md` directly.
 3. **Wiki contour isolation.** Atomic notes / MOCs / contacts never land
    inside `{{slug}}/`; wiki pages never land outside it.
+4. **Machine-owned pages.** Compiled pages (`pages/`, `entities/`,
+   `concepts/`, `comparisons/`, `queries/`, `readouts/`) are rewritten by
+   `wiki_compile.py` from `raw/` + snapshot. Hand-edits to their prose are
+   not guaranteed to survive the next compile — add a `raw/` input and
+   recompile instead of editing pages by hand.

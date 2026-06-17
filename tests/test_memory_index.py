@@ -124,17 +124,21 @@ def test_folder_filter(cfg: dict) -> None:
 # ── auto-update hook ──────────────────────────────────────────────────────────
 
 
-def test_auto_update_noop_without_db(cfg: dict, tmp_path: Path) -> None:
+def test_auto_update_noop_without_db(cfg: dict, tmp_path: Path, capsys) -> None:
     auto_update_after_write(cfg)
     assert not (tmp_path / "cache").exists()  # hook never creates the first build
+    err = capsys.readouterr().err  # but it must signal the missing index
+    assert "not built" in err and "memory_index.py build" in err
 
 
-def test_auto_update_refreshes_existing_db(cfg: dict, vault: Path) -> None:
+def test_auto_update_refreshes_existing_db(cfg: dict, vault: Path, capsys) -> None:
     update_index(cfg, full=True, quiet=True)
     (vault / "Notes" / "fresh.md").write_text("# fresh\n\nсвежайшая заметка\n",
                                               encoding="utf-8")
+    capsys.readouterr()  # drop anything from the build above
     auto_update_after_write(cfg)
     assert search(cfg, "свежайшая")[0]["path"] == "Notes/fresh.md"
+    assert "not built" not in capsys.readouterr().err  # silent once the db exists
 
 
 def test_auto_update_respects_flags(cfg: dict, vault: Path) -> None:

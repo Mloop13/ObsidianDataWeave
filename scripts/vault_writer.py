@@ -220,7 +220,16 @@ def _wiki_dest(config: dict, frontmatter: dict) -> Path:
     """
     vault_path = Path(config["vault"]["vault_path"])
     wiki_cfg = config.get("wiki", {})
-    wiki_folder = wiki_cfg.get("wiki_folder", "LLM Wiki")
+    wiki_folder = str(wiki_cfg.get("wiki_folder", "LLM Wiki")).strip()
+    # Guard: wiki_folder is joined into the vault path, so it must be a single
+    # safe segment inside the vault — reject empty, traversal ('..'), absolute
+    # paths and embedded separators before they can escape vault_path.
+    _wf_parts = Path(wiki_folder).parts
+    if not wiki_folder or ".." in _wf_parts or Path(wiki_folder).is_absolute() or len(_wf_parts) != 1:
+        raise ValueError(
+            f"[wiki].wiki_folder must be a single folder name inside the vault "
+            f"(no separators, no '..', not absolute); got {wiki_folder!r}"
+        )
 
     project = frontmatter.get("wiki_project")
     if not isinstance(project, str) or not project:

@@ -66,6 +66,31 @@ Agents should treat this file as the canonical integration contract for both Cla
     `python3 scripts/memory_index.py build` | `update` | `status`
     `python3 scripts/migrate.py`  (idempotent: adds [memory] config, builds index)
 
+## Memory protocol (MUST)
+
+The FTS5 vault memory (`scripts/memory_index.py`) is the agent's recall layer.
+It is **not** automatic end-to-end: the first build is explicit, and search
+only helps if you actually run it. Follow this protocol — do not treat memory
+as optional.
+
+1. **Ensure the index exists.** On a new setup, after `git pull`, or whenever
+   unsure, run `python3 scripts/memory_index.py status`. If it reports
+   `exists: false`, build it once: `python3 scripts/memory_index.py build`
+   (or `python3 scripts/migrate.py`, which builds it idempotently). The index
+   does **not** self-create on the first vault write — `vault_writer` only
+   refreshes an index that already exists and prints a `NOTE:` hint to stderr
+   when it is missing.
+2. **Search before you answer or write.** Before answering any question about
+   vault / wiki content, and before `wiki_compile.py` / `wiki_update.py` (to
+   avoid duplicating existing knowledge), first run
+   `python3 scripts/memory_index.py search "<query>" --json`. Prefer recall
+   over guessing from memory.
+3. **Self-heal on miss.** If a search raises `index not built yet`, run
+   `python3 scripts/memory_index.py build`, then retry the search.
+
+After a build, `[memory].auto_update` keeps the index fresh on every
+`vault_writer` write — no manual refresh is needed during normal operation.
+
 ## Workflow Mapping
 Common user intent -> command:
 
@@ -93,6 +118,8 @@ Common user intent -> command:
 - "compile wiki" / "собери вики <slug>" -> `python3 scripts/wiki_compile.py <slug> --since-last-compile`
 - "update wiki page" / "обнови вики <slug> <raw-path>" -> `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
 - "lint wiki" / "проверь вики" -> `python3 scripts/wiki_lint.py [<slug>] --strict`
+- "search notes/vault" / "найди в заметках" / "what do we know about X" / "что мы знаем про X" / "вспомни" / "recall" -> `python3 scripts/memory_index.py search "<query>" --json`
+- "rebuild/refresh memory" / "перестрой индекс памяти" / "memory status" -> `python3 scripts/memory_index.py build | update | status`
 
 ## Important Constraints
 - `scripts/vault_writer.py` is the only script allowed to write generated note files into `vault_path`. This includes wiki pages — `wiki_compile.py` always invokes `vault_writer.py` as a subprocess.

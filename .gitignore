@@ -51,6 +51,9 @@ proposed-tags.md
 gdrive-import/
 *.docx
 
+# graphify knowledge-graph build artifacts (regenerable, machine-local)
+graphify-out/
+
 # Logs
 *.log
 .gstack/

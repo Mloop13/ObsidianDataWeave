@@ -47,6 +47,10 @@ trigger_phrases:
   - поиск по вики
   - rebuild memory index
   - перестрой индекс памяти
+  - recall
+  - вспомни
+  - what do we know about
+  - что мы знаем про
 ---
 
 # ObsidianDataWeave Claude Adapter
@@ -96,6 +100,20 @@ Use the repo-local `AGENTS.md` as the primary contract.
   `python3 scripts/memory_index.py build` (full) or `update` (incremental)
 - Upgrade an existing install after `git pull` (config + index migration):
   `python3 scripts/migrate.py`
+
+## Memory protocol (MUST)
+
+The FTS5 vault memory is the recall layer — use it, do not treat it as
+optional. See `AGENTS.md` → "Memory protocol (MUST)" for the full contract.
+In short:
+
+1. **Ensure it exists.** Run `memory_index.py status`; if `exists: false`,
+   run `memory_index.py build` once (the index never self-creates on the
+   first write — `vault_writer` prints a `NOTE:` hint when it is missing).
+2. **Search before answering or writing.** Before answering questions about
+   vault/wiki content, and before `wiki_compile.py` / `wiki_update.py`, run
+   `memory_index.py search "<query>" --json` first.
+3. **Self-heal.** On `index not built yet` → `build`, then retry.
 
 ## NotebookLM Workflow (direct control)
 

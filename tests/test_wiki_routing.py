@@ -116,3 +116,21 @@ def test_invalid_wiki_page_type_raises(cfg: dict) -> None:
 def test_raw_with_invalid_kind_raises(cfg: dict) -> None:
     with pytest.raises(ValueError, match="raw_kind"):
         _wiki_dest(cfg, {"wiki_project": "demo", "wiki_page_type": "raw", "raw_kind": "weird"})
+
+
+@pytest.mark.parametrize(
+    "bad_folder",
+    ["", "   ", "..", "../escape", "/abs/path", "a/b", "Knowledge/Wiki"],
+)
+def test_unsafe_wiki_folder_raises(cfg: dict, bad_folder: str) -> None:
+    """wiki_folder is joined into vault_path — traversal/absolute/nested rejected."""
+    cfg["wiki"]["wiki_folder"] = bad_folder
+    with pytest.raises(ValueError, match="wiki_folder"):
+        _wiki_dest(cfg, {"wiki_project": "demo", "wiki_page_type": "entity"})
+
+
+def test_wiki_folder_with_space_is_allowed(cfg: dict) -> None:
+    """A single-segment name with spaces (the default 'LLM Wiki') stays valid."""
+    cfg["wiki"]["wiki_folder"] = "My Wiki"
+    dest = _wiki_dest(cfg, {"wiki_project": "demo", "wiki_page_type": "entity"})
+    assert dest == Path(cfg["vault"]["vault_path"]) / "My Wiki" / "demo" / "entities"

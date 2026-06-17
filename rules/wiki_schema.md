@@ -35,6 +35,18 @@ to other wiki pages (or to the explicit `[[?slug]]` open-question marker).
 └── queries/           (saved questions and their compiled answers)
 ```
 
+## Machine-owned pages (do not hand-edit)
+
+Compiled pages — everything under `pages/`, `entities/`, `concepts/`,
+`comparisons/`, `queries/`, `readouts/` — are **machine-owned**.
+`wiki_compile.py` rewrites them from `raw/` + the existing snapshot via the
+LLM on every compile. Hand-edits to their prose are **not guaranteed to
+survive** the next compile; only `[[wikilinks]]` are protected (the
+`WIKI_LINKS_LOST` safety property). To add or correct durable knowledge,
+add a `raw/` input and recompile — do not edit compiled pages by hand.
+
+(`SCHEMA.md` is the exception: it is frozen and never touched by compile.)
+
 ## Page types
 
 `wiki_page_type` is one of:
