@@ -66,3 +66,26 @@ tokenizer = "unicode61"
 # Refresh the index automatically after each vault_writer write.
 # First build is always explicit: scripts/memory_index.py build (or migrate.py).
 auto_update = true
+
+[semantic]
+# Semantic (embedding) search over the vault via a LOCAL Ollama model —
+# complements the FTS5 [memory] layer (matches by meaning, not exact words).
+# Requires: `pip install sqlite-vec==0.1.9` and, one-time, `ollama pull bge-m3`.
+enabled = true
+
+# Ollama embedding model. bge-m3: 1024-dim, MIT, strong on Russian retrieval,
+# 8192-token context. Change `dimensions` too if you switch models.
+model = "bge-m3"
+ollama_url = "http://localhost:11434"
+dimensions = 1024
+
+# Notes longer than chunk_chars are split by heading (with overlap) before
+# embedding — Ollama silently truncates past the model context, so chunking is
+# required, not optional. ~2.5 chars/token for Cyrillic keeps 6000 under 8192.
+chunk_chars = 6000
+chunk_overlap = 200
+batch_size = 16
+
+# Where the vector DB lives. Empty → same dir as the FTS index
+# (~/.cache/obsidian-dataweave/), as its own <slug>-<hash>-vec.db file.
+db_dir = ""

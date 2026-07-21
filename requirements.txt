@@ -2,3 +2,4 @@ python-docx>=1.1.0,<2.0.0
 PyYAML>=6.0
 notebooklm-py>=0.3.0
 tomli>=2.0; python_version < "3.11"
+sqlite-vec==0.1.9  # semantic_index.py — local vector search (pin: pre-1.0)
