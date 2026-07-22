@@ -94,26 +94,60 @@ Use the repo-local `AGENTS.md` as the primary contract.
   `python3 scripts/wiki_update.py <slug> raw/docs/<file>.md`
 - Lint a wiki-space (or all of them):
   `python3 scripts/wiki_lint.py [<slug>] [--strict]`
-- Search the vault memory (FTS5 full-text, agents should prefer `--json`):
-  `python3 scripts/memory_index.py search "<query>" --json [--limit 10] [--prefix] [--folder X] [--tag Y]`
-- Rebuild / refresh the memory index:
-  `python3 scripts/memory_index.py build` (full) or `update` (incremental)
+- Search the vault (agents should prefer `--json`). **Default: hybrid** — fuses
+  semantic (embeddings, `bge-m3`) + FTS5 via RRF; best for meaning/paraphrase recall:
+  `python3 scripts/semantic_index.py hybrid "<query>" --json [--limit 10]`
+  - Exact terms, tags, ids (e.g. `F41.2`) or filtered search → pure FTS5:
+    `python3 scripts/memory_index.py search "<query>" --json [--limit 10] [--prefix] [--folder X] [--tag Y]`
+  - Pure semantic (no lexical overlap): `python3 scripts/semantic_index.py search "<query>" --json`
+- Rebuild / refresh the indexes (FTS5 + vectors are separate):
+  `python3 scripts/memory_index.py build|update` and `python3 scripts/semantic_index.py build|update`
 - Upgrade an existing install after `git pull` (config + index migration):
   `python3 scripts/migrate.py`
 
 ## Memory protocol (MUST)
 
-The FTS5 vault memory is the recall layer — use it, do not treat it as
-optional. See `AGENTS.md` → "Memory protocol (MUST)" for the full contract.
-In short:
+The vault memory is the recall layer — use it, do not treat it as optional.
+Two indexes back it: FTS5 (lexical, `memory_index.py`) and semantic
+(embeddings, `semantic_index.py`); `hybrid` fuses both and is the default.
+See `AGENTS.md` → "Memory protocol (MUST)" for the full contract. In short:
 
-1. **Ensure it exists.** Run `memory_index.py status`; if `exists: false`,
-   run `memory_index.py build` once (the index never self-creates on the
-   first write — `vault_writer` prints a `NOTE:` hint when it is missing).
+1. **Ensure it exists.** Run `memory_index.py status` and
+   `semantic_index.py status`; if either `exists: false`, run its `build`
+   once (neither index self-creates on the first write — `vault_writer`
+   prints a `NOTE:` hint when the FTS index is missing).
 2. **Search before answering or writing.** Before answering questions about
    vault/wiki content, and before `wiki_compile.py` / `wiki_update.py`, run
-   `memory_index.py search "<query>" --json` first.
+   `semantic_index.py hybrid "<query>" --json` first (it falls back to pure
+   FTS5 if the vector index is absent).
 3. **Self-heal.** On `index not built yet` → `build`, then retry.
+
+## Recursive recall (RLM pattern)
+
+The vault is larger than any context window. Treat it as an **external
+environment** and recurse over it — never try to load the whole thing.
+This extends the Memory protocol above from a single flat search into a
+depth-controlled loop (Recursive Language Models, arXiv 2512.24601).
+
+Loop when a question spans many notes or one flat search is thin:
+
+1. **Probe.** Start with `semantic_index.py hybrid "<topic>" --json` — read
+   titles + headings only, not full note bodies.
+2. **Assess.** Is this enough to answer? Name the gaps explicitly.
+3. **Descend per gap.** For each gap fire a narrower sub-search: reword the
+   query, or scope it with `--folder`, `--tag`, `--prefix`. Read the FULL
+   text of only the few most relevant notes, not everything returned.
+4. **Follow links.** From notes you actually read, pull `[[wikilinks]]` and
+   `[[?open-questions]]`; if they matter to the gap, they seed the next turn.
+5. **Stop.** Halt when two turns add nothing new, or the gaps are closed.
+   State plainly what stayed uncovered — never present partial recall as
+   complete.
+
+Same principle for large inputs before atomization (docx / notebook / wiki
+raw): reason section-by-section, fetching more only as a gap demands it,
+instead of forcing the whole document through one pass. This pairs with the
+FTS5 memory (retrieval layer) — memory finds the chunk, this loop decides
+where to dig next.
 
 ## NotebookLM Workflow (direct control)
 

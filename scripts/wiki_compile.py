@@ -141,7 +141,7 @@ def snapshot_wiki_space(root: Path) -> dict[str, Any]:
     pages: dict[str, dict[str, Any]] = {}
     existing_links: dict[str, list[str]] = {}
     for md in root.rglob("*.md"):
-        rel = str(md.relative_to(root))
+        rel = md.relative_to(root).as_posix()
         try:
             text = md.read_text(encoding="utf-8")
         except OSError:

@@ -4,11 +4,24 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+
+def _resolve_exe(name: str) -> str:
+    """Resolve a CLI name to a full executable path.
+
+    Bare ``"claude"`` fails under Windows CreateProcess (it does not apply
+    PATHEXT, so the ``claude.cmd`` shim is never found). ``shutil.which``
+    resolves the real path (``claude.CMD``/``.exe``) on every platform; the
+    full path runs fine via subprocess without ``shell=True``. Falls back to
+    the bare name when nothing is found so the original error surfaces.
+    """
+    return shutil.which(name) or name
 
 
 def detect_backend(explicit: str | None = None) -> str:
@@ -72,11 +85,12 @@ def call_claude(
 ) -> str:
     """Call Claude CLI with the assembled prompt, return stdout."""
     clean_env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    claude_exe = _resolve_exe("claude")
 
     for attempt in range(1, max_retries + 1):
         try:
             result = subprocess.run(
-                ["claude", "--print"],
+                [claude_exe, "--print"],
                 input=prompt,
                 capture_output=True,
                 text=True,
@@ -109,7 +123,7 @@ def call_claude(
                 )
                 try:
                     cont_result = subprocess.run(
-                        ["claude", "--print"],
+                        [claude_exe, "--print"],
                         input=cont_prompt,
                         capture_output=True,
                         text=True,

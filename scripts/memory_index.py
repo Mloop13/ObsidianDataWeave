@@ -50,6 +50,13 @@ DEFAULT_DB_DIR = Path.home() / ".cache" / "obsidian-dataweave"
 VALID_TOKENIZERS = ("unicode61", "trigram")
 TRIGRAM_MIN_SQLITE = (3, 34, 0)
 
+# Folders excluded from the SEARCH INDEX only (not from the general vault scan).
+# "Claude Memory" is a robocopy /MIR mirror of the agent's canonical memory
+# (~/.claude/.../memory); indexing it duplicates every hit in search results,
+# so keep it out of the FTS index while leaving the files in the vault (for the
+# Obsidian graph / human browsing).
+INDEX_SKIP_DIRS = {"Claude Memory"}
+
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
 
@@ -201,7 +208,7 @@ def scan_files(vault_path: Path) -> dict[str, tuple[float, int]]:
     out: dict[str, tuple[float, int]] = {}
     for md_file in vault_path.rglob("*.md"):
         rel = md_file.relative_to(vault_path)
-        if any(part in SKIP_DIRS for part in rel.parts):
+        if any(part in SKIP_DIRS or part in INDEX_SKIP_DIRS for part in rel.parts):
             continue
         try:
             stat = md_file.stat()
